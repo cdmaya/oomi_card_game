@@ -1,5 +1,5 @@
 # oomi_card_game
-This program sketch is designed to facilitate gameplay of the Sri Lankan card game, Oomi, accommodating 4, 6, or 8 players.
+This program sketch is designed to facilitate gameplay of the Sri Lankan card game, Oomi (ඕමි), accommodating 4, 6, or 8 players.
 The flexibility extends to the variable number of cards utilized in the game, ranging from 2 to ace from each suite, as per the requirements. Each player can hold a maximum of 8 cards.
 
 ![oomi_card_game_setup](https://github.com/cdmaya/oomi_card_game/assets/51185952/b08229b3-5167-4948-81df-bd79f680d496)
