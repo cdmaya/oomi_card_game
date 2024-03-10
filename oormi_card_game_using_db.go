@@ -274,6 +274,7 @@ func addCardToHandAndFindMyTrump(cardNames [13]string, cardsPerSuite int, cardsP
 				//showCardsInHand(cards)
 				continue
 			}
+			printMyHand()
 		}
 	}
 
@@ -372,6 +373,7 @@ func addCardsToHandAndGetTrump(cardNames [13]string, cardsPerSuite int, cardsPer
 				continue
 			}
 		}
+		printMyHand()
 	}
 	for { //while Trump is given
 		var confirm string
@@ -514,14 +516,25 @@ func initPlayersTab(noOfPlayers int) {
 	}
 }
 
-func initCardsTab(cardsPerSuite int, cardPoints [13]int) {
+func initCardsTab(cardsPerSuite int, cardPoints [13]int, noOfPlayers int) {
 	var selectedCards int = cardsPerSuite - 1 // since card point array is 1 less than # of cards
 	var minCardPoints int = cardPoints[selectedCards]
 	var res sql.Result
 	var dbResponse bool
-	res, dbResponse = executeOnDB("DELETE FROM CARDS WHERE ROUNDPOINTS < "+strconv.Itoa(minCardPoints), "SQL0014-DELETE FROM CARDS WHERE ROUNDPOINTS", true)
+	res, dbResponse = executeOnDB("DELETE FROM CARDS WHERE ROUNDPOINTS < "+strconv.Itoa(minCardPoints), "SQL00140-DELETE FROM CARDS WHERE ROUNDPOINTS", true)
 	if res == nil || !dbResponse {
 		os.Exit(1)
+	}
+	if noOfPlayers == 4 {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET PLCONF4=0,PLCONF5=0,PLCONF6=0,PLCONF7=0", "SQL00141-UPDATE CARDS SET PLCONF4", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	} else if noOfPlayers == 6 {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET PLCONF6=0,PLCONF7=0", "SQL00142-UPDATE CARDS SET PLCONF6", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
 	}
 }
 
@@ -547,7 +560,7 @@ func updateCardsTabRoundPointsForTrumpSuite(trumpSuite string, pointsAddForTrump
 	}
 }
 
-func printCardsPlayedInRound(roundNo int, roundWinnerCard CardValue) {
+func printCardsPlayedInRound(roundNo int, roundWinnerCard CardValue, trumpSuite string) {
 	var rows *sql.Rows
 	var dbResponse bool
 	var playerID, playerName, friend, cardSuite, cardName, roundPoints, winner string
@@ -556,6 +569,7 @@ func printCardsPlayedInRound(roundNo int, roundWinnerCard CardValue) {
 		os.Exit(1)
 	}
 	fmt.Println("Cards Played in Round : " + strconv.Itoa(roundNo) + " --- ")
+	fmt.Println("Trump 				   : " + trumpSuite + " --- ")
 	fmt.Println("--PLAYERID PLAYERNAME FRIEND CARDSUITE CARDNAME ROUNDPOINTS WINNER")
 	for rows.Next() {
 		rows.Scan(&playerID, &playerName, &friend, &cardSuite, &cardName, &roundPoints, &winner)
@@ -571,6 +585,24 @@ func printCardsPlayedInRound(roundNo int, roundWinnerCard CardValue) {
 	}
 	fmt.Println("--- Round Winner (So Far) : ", roundWinnerCard)
 	fmt.Println("--- END OF Cards Played in Round --- ")
+	printMyHand()
+}
+
+func printMyHand() {
+	var rows *sql.Rows
+	var dbResponse bool
+	var myCard string
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE||'-'||CARDNAME FROM CARDS WHERE INPLAY=TRUE AND INMYHAND=TRUE", "Cqy85VTxM4APfZ2lweDRZ0qwPr2cruUz", true)
+	if rows == nil || !dbResponse {
+		os.Exit(1)
+	}
+	fmt.Print("Cards in my hand : ")
+	for rows.Next() {
+		rows.Scan(&myCard)
+		fmt.Print(myCard)
+		fmt.Print("  ")
+	}
+	fmt.Println()
 }
 
 func getCurrentPlayerName(currentPlayerID int) string {
@@ -880,15 +912,23 @@ func updateRoundsTabWithWinner(currentRoundWinnerID int, roundNo int) {
 	}
 }
 
-func updateCardsTabForTrumpCaller(trumpsCaller int, trumpSuite string, cardConfidenceAddForTrumpcCaller [13]int, cardNames [13]string) {
+func updateCardsTabForTrumpCaller(trumpsCaller int, trumpSuite string, cardConfidenceAddForTrumpcCaller [13]float32, cardNames [13]string) {
 	var res sql.Result
 	var dbResponse bool = false
 	for c := 0; c < len(cardNames); c++ {
-		res, dbResponse = executeOnDB("UPDATE CARDS SET PLCONF"+strconv.Itoa(trumpsCaller)+"=PLCONF"+strconv.Itoa(trumpsCaller)+"+"+strconv.Itoa(cardConfidenceAddForTrumpcCaller[c])+" WHERE INMYHAND=false AND CARDNAME='"+cardNames[c]+"' AND CARDSUITE='"+trumpSuite+"'", "SQL0039-UPDATE CARDS SET PLCONF", true)
+		res, dbResponse = executeOnDB("UPDATE CARDS SET PLCONF"+strconv.Itoa(trumpsCaller)+"=PLCONF"+strconv.Itoa(trumpsCaller)+"*"+float32ToString(cardConfidenceAddForTrumpcCaller[c])+" WHERE INMYHAND=false AND CARDNAME='"+cardNames[c]+"' AND CARDSUITE='"+trumpSuite+"'", "SQL0039-UPDATE CARDS SET PLCONF", true)
 		if res == nil || !dbResponse {
 			os.Exit(1)
 		}
 	}
+}
+
+func float32ToString(value float32) string {
+	return strconv.FormatFloat(float64(value), 'f', -1, 32)
+}
+
+func intToString(value int) string {
+	return strconv.Itoa(value)
 }
 
 func getARandomCardInMyHand() CardValue {
@@ -903,6 +943,102 @@ func getARandomCardInMyHand() CardValue {
 		rows.Scan(&currentCard.Suite, &currentCard.Name)
 	}
 	return currentCard
+}
+
+func checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID int, currentCard CardValue, roundPoints int, trumpSuite string) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var higherTrumpCards int = 0
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE PLCONF"+intToString(foeID)+">=PLCONF1 AND PLCONF"+intToString(foeID)+">=PLCONF2 AND PLCONF"+intToString(foeID)+">=PLCONF3 AND PLCONF"+intToString(foeID)+">=PLCONF4 AND PLCONF"+intToString(foeID)+">=PLCONF5 AND PLCONF"+intToString(foeID)+">=PLCONF6 AND PLCONF"+intToString(foeID)+">=PLCONF7 AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return false
+	}
+	for rows.Next() {
+		rows.Scan(&higherTrumpCards)
+		if higherTrumpCards > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func checkIfFoesDoNotHaveHigerTrumpConfidence(currentCard CardValue, roundPoints int, trumpSuite string) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var foeID int
+	rows, dbResponse = queryFromDB("SELECT PLAYERID FROM PLAYERS WHERE PLAYEDINROUND=true AND PLAYERID IN (1,3,5,7)", "SQL-mKu7OrRZyDB5vTpfBrfCcxfOKpn5av8Q", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return true
+	}
+	for rows.Next() {
+		rows.Scan(&foeID)
+		if checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID, currentCard, roundPoints, trumpSuite) {
+			return false
+		}
+	}
+	return true
+}
+
+func getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite string) CardValue {
+	var currentCard, returnCard, nulCard CardValue
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var roundPoints int = 0
+	nulCard.Suite = "nul"
+	returnCard.Suite = "nul"
+	if countSuiteCardsInMyHand(trumpSuite) == 0 {
+		return nulCard
+	}
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,ROUNDPOINTS FROM CARDS WHERE INMYHAND=true AND INPLAY=true AND CARDSUITE='"+trumpSuite+"' ORDER BY ROUNDPOINTS ASC", "SQL0040-SELECT CARDSUITE,CARDNAME ", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return nulCard
+	}
+	for rows.Next() {
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &roundPoints)
+		if checkIfFoesDoNotHaveHigerTrumpConfidence(currentCard, roundPoints, trumpSuite) {
+			returnCard.Suite = currentCard.Suite
+			returnCard.Name = currentCard.Name
+		} else {
+			continue
+		}
+	}
+	if returnCard.Suite != nulCard.Suite {
+		return returnCard
+	} else {
+		return nulCard
+	}
+}
+
+func getMaxRoundCardIfIHaveItInMyHandIfItsAboveCurrentWinner(roundSuite string, currentRoundWinnerPoints int) CardValue {
+	var currentCard, nulCard CardValue
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var inMyHand bool = false
+	var roundPoints int = 0
+	nulCard.Suite = "nul"
+	rows, dbResponse = queryFromDB("SELECT INMYHAND,CARDSUITE,CARDNAME,ROUNDPOINTS FROM CARDS WHERE INPLAY=true AND CARDSUITE='"+roundSuite+"' ORDER BY ROUNDPOINTS DESC LIMIT 1", "SQL0040-SELECT CARDSUITE,CARDNAME ", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return nulCard
+	}
+	for rows.Next() {
+		rows.Scan(&inMyHand, &currentCard.Suite, &currentCard.Name, &roundPoints)
+	}
+	if inMyHand && roundPoints > currentRoundWinnerPoints {
+		return currentCard
+	}
+	return nulCard
 }
 
 func getMaxRoundCardInMyHand(roundSuite string) CardValue {
@@ -1126,6 +1262,166 @@ func checkFriendConfidenceOnTrumps(trumpSuite string, noOfPlayers int) int {
 	return foeConfidenceOnTrumps
 }
 
+func getFullFriendFoeConfidenceForMaxInSuite(cardSuite string) (friendConf int, foeConf int) {
+	var currentCard, maxSuiteCard, nulCard CardValue
+	var dbResponse = false
+	var rows *sql.Rows
+	nulCard.Suite = "nul"
+	rows, dbResponse = queryFromDB("SELECT (PLCONF1 + PLCONF3 + PLCONF5 + PLCONF7) AS TOTAL_CONF, CARDNAME, CARDSUITE FROM CARDS WHERE CARDSUITE = '"+cardSuite+"' AND INMYHAND = FALSE AND INPLAY = TRUE ORDER BY ROUNDPOINTS DESC LIMIT 1", "SQL-80634037554310202519884252290862", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return 0, 0
+	}
+	for rows.Next() {
+		rows.Scan(&foeConf, &maxSuiteCard.Name, &maxSuiteCard.Suite)
+	}
+	rows, dbResponse = queryFromDB("SELECT (PLCONF2 + PLCONF4 + PLCONF6) AS TOTAL_CONF, CARDNAME, CARDSUITE FROM CARDS WHERE CARDSUITE = '"+cardSuite+"' AND INMYHAND = FALSE AND INPLAY = TRUE ORDER BY ROUNDPOINTS DESC LIMIT 1", "SQL-80634037554310202519884252290862", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return 0, 0
+	}
+	for rows.Next() {
+		rows.Scan(&friendConf, &currentCard.Name, &currentCard.Suite)
+	}
+	if currentCard != maxSuiteCard {
+		return 0, 0
+	} else {
+		return friendConf, foeConf
+	}
+}
+
+func checkIfPlayerHasMaxConfidenceOnTrump(playerNotHavingSuite int, trumpSuite string) bool {
+	var dbResponse = false
+	var rows *sql.Rows
+	var plConfTotal, plCheck, plConf1, plConf2, plConf3, plConf4, plConf5, plConf6, plConf7 int = 0, 0, 0, 0, 0, 0, 0, 0, 0
+	rows, dbResponse = queryFromDB("SELECT (PLCONF1+PLCONF2+PLCONF3+PLCONF4+PLCONF5+PLCONF6+PLCONF7), PLCONF"+intToString(playerNotHavingSuite)+", PLCONF1, PLCONF2, PLCONF3, PLCONF4, PLCONF5, PLCONF6, PLCONF7 FROM CARDS WHERE INPLAY=TRUE AND CARDSUITE='"+trumpSuite+"'", "SQL-80634037554310202519884252290862", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&plConfTotal, &plCheck, &plConf1, &plConf2, &plConf3, &plConf4, &plConf5, &plConf6, &plConf7)
+		if plConfTotal == 0 {
+			continue
+		}
+		if playerNotHavingSuite%2 == 0 {
+			if plCheck < plConf1 || plCheck < plConf3 || plCheck < plConf5 || plCheck < plConf7 {
+				return false
+			}
+		} else {
+			if plCheck < plConf2 || plCheck < plConf4 || plCheck < plConf6 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func checkIfAnyOfTheFoesDontHaveASuiteAndDontHaveTrumpConf(cardSuite string, trumpSuite string) bool {
+	var playerNotHavingSuite int = 0
+	var dbResponse = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT PLAYERID FROM PLAYERS WHERE "+cardSuite+"PROB<>1 AND PLAYERID IN (1, 3, 5, 7)", "SQL-80634037554310202519884252290862", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&playerNotHavingSuite)
+		if !checkIfPlayerHasMaxConfidenceOnTrump(playerNotHavingSuite, trumpSuite) {
+			return false
+		}
+	}
+	return true
+}
+
+func checkIfAnyOfTheFriendsDontHaveASuiteAndDontHaveTrumpConf(cardSuite string, trumpSuite string) bool {
+	var playerNotHavingSuite int = 0
+	var dbResponse = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT PLAYERID FROM PLAYERS WHERE "+cardSuite+"PROB<>1 AND PLAYERID IN (2, 4, 6)", "SQL-80634037554310202519884252290862", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&playerNotHavingSuite)
+		if !checkIfPlayerHasMaxConfidenceOnTrump(playerNotHavingSuite, trumpSuite) {
+			return false
+		}
+	}
+	return true
+}
+
+func getMinFromANonTrumpSuiteIfFriendsHaveMaxOfThatSuiteAndFoesHaveLessPossibilityOfTrumps(trumpSuite string, noOfPlayers int, cardSuites [4]string, cardPoints [13]int, cardsPerSuite int) CardValue {
+	var currentCard, nulCard, returnCard CardValue
+	var dbResponse = false
+	var garbageInt int = 0
+	var rows *sql.Rows
+	nulCard.Suite = "nul"
+	returnCard.Suite = "nul"
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MIN(ROUNDPOINTS) FROM CARDS WHERE INPLAY=TRUE AND INMYHAND=TRUE AND CARDSUITE<>'"+trumpSuite+"'GROUP BY CARDSUITE ORDER BY ROUNDPOINTS ASC", "SQL-35AQbgWw1OEDt1qxBZwZpdenWlyo5D4M", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return nulCard
+	}
+	var friendConf, foeConf, maxFriendMinusFoe int = 0, 0, 0
+	for rows.Next() {
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &garbageInt)
+		friendConf, foeConf = getFullFriendFoeConfidenceForMaxInSuite(currentCard.Suite)
+		if friendConf-foeConf > maxFriendMinusFoe {
+			if checkIfAnyOfTheFoesDontHaveASuiteAndDontHaveTrumpConf(currentCard.Suite, trumpSuite) {
+				maxFriendMinusFoe = friendConf - foeConf
+				returnCard.Suite = currentCard.Suite
+				returnCard.Name = currentCard.Name
+			}
+		}
+	}
+	if returnCard.Suite != nulCard.Suite {
+		return returnCard
+	} else {
+		return nulCard
+	}
+}
+
+func getMinFromANonTrumpSuiteIfFriendsHaveMorePossibilityOfMaxOfThatSuiteAndFoesHaveNoTrumps(trumpSuite string, noOfPlayers int, cardSuites [4]string, cardPoints [13]int, cardsPerSuite int) CardValue {
+	var currentCard, nulCard, returnCard CardValue
+	var dbResponse = false
+	var garbageInt int = 0
+	var rows *sql.Rows
+	nulCard.Suite = "nul"
+	returnCard.Suite = "nul"
+	var foeConfidenceOnTrumps int = checkFoeConfidenceOnTrumps(trumpSuite, noOfPlayers)
+	if foeConfidenceOnTrumps > 0 {
+		return nulCard
+	}
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MIN(ROUNDPOINTS) FROM CARDS WHERE INPLAY=TRUE AND INMYHAND=TRUE AND CARDSUITE<>'"+trumpSuite+"'GROUP BY CARDSUITE ORDER BY ROUNDPOINTS ASC", "SQL-35AQbgWw1OEDt1qxBZwZpdenWlyo5D4M", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return nulCard
+	}
+	var friendConf, foeConf, maxFriendMinusFoe int = 0, 0, 0
+	for rows.Next() {
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &garbageInt)
+		friendConf, foeConf = getFullFriendFoeConfidenceForMaxInSuite(currentCard.Suite)
+		if friendConf-foeConf > maxFriendMinusFoe {
+			maxFriendMinusFoe = friendConf - foeConf
+			returnCard.Suite = currentCard.Suite
+			returnCard.Name = currentCard.Name
+		}
+	}
+	if returnCard.Suite != nulCard.Suite {
+		return returnCard
+	} else {
+		return nulCard
+	}
+}
+
 func getMaxFromANonTrumpSuiteIfIHaveMaxOfThatSuiteAndFoesHaveNoTrumps(trumpSuite string, noOfPlayers int, cardSuites [4]string) CardValue {
 	var currentCard, nulCard CardValue
 	var dbResponse = false
@@ -1201,7 +1497,7 @@ func getMyMinPointsCard() CardValue {
 	var garbageInt int
 	var rows *sql.Rows
 	currentCard.Suite = "nul"
-	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MIN(POINTS) FROM CARDS WHERE INPLAY=TRUE AND INMYHAND=TRUE", "SQL00500-SELECT CARDSUITE,CARDNAME,MIN(POINTS)", true)
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MIN(ROUNDPOINTS) FROM CARDS WHERE INPLAY=TRUE AND INMYHAND=TRUE", "SQL00500-SELECT CARDSUITE,CARDNAME,MIN(POINTS)", true)
 	if !dbResponse || rows == nil {
 		os.Exit(1)
 	}
@@ -1275,6 +1571,449 @@ func updatePlayersTabPlayedInRound(currentPlayerID int) {
 	}
 }
 
+func calcNewConfidence(oldConfidence int, factor float32) int {
+	return int(float32(oldConfidence) * factor)
+}
+
+func calcConfidenceChange(oldConfidence int, factor float32) int {
+	return (int(float32(oldConfidence) * factor)) - oldConfidence
+}
+
+func plConfUpdateString(currentPlayerID int, floatValue float32) string {
+	return "PLCONF" + intToString(currentPlayerID) + "=PLCONF" + intToString(currentPlayerID) + "*" + float32ToString(floatValue)
+}
+
+func fn_adjustCONF_10_20(adjustCONF10A_dec_SuiteAce float32, adjustCONF20A_dec_NonSuiteAce float32, currentCard CardValue, currentCardPoints int, cardNames [13]string, cardsPerSuite int,
+	trumpSuite string, currentPlayerID int) {
+	// --- 10A) & 20A) player plays a non trump non ace card from lower half of the suite, when aces are still in game
+	//			player expects to : lose, aces will be played agaist that card
+	//          assumption 10A - player doesn't have that ace card
+	//			assumption 20A - player doesn't have other non trump aces
+	if currentCard.Suite == trumpSuite { // ignore if it's trump suite
+		return
+	}
+	for c := 0; c < cardsPerSuite/2; c++ { // ignore if it's more upper half of the suite card in play
+		if currentCard.Name == cardNames[c] {
+			return
+		}
+	}
+	var cardCount int = 0
+	var dbResponse bool = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+currentCard.Suite+"' AND INPLAY=TRUE AND CARDNAME='ace'", "SQL10_20-1-fn_adjustCONF10_20", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&cardCount)
+	}
+	if cardCount == 0 { // return if suite ace is not in game
+		return
+	}
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF10A_dec_SuiteAce)+" WHERE CARDNAME='ace' AND CARDSUITE='"+currentCard.Suite+"'", "SQL10_20-2-fn_adjustCONF10_20", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF20A_dec_NonSuiteAce)+" WHERE CARDNAME='ace' AND CARDSUITE<>'"+currentCard.Suite+"' AND CARDSUITE<>'"+trumpSuite+"'", "SQL10_20-3-fn_adjustCONF10_20", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_30_40(adjustCONF30A_dec_LowerSuiteCards float32, adjustCONF40A_dec_SuiteCards float32, currentCard CardValue, currentCardPoints int, trumpSuite string, currentPlayerID int) {
+	// --- 30A) & 40A) player plays a non trump card, when higher card from the same suite are still in game
+	//		  	player expects to : lose, that there will be higher cards from the same suite challenging that card,
+	//        	assumption 30A - player doesn't have lower cards from that suite
+	//		 	assumption 40A - player wants to get rid if that suite
+	if currentCard.Suite == trumpSuite { // ignore if it's trump suite
+		return
+	}
+	var cardCount int = 0
+	var dbResponse bool = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+currentCard.Suite+"' AND INPLAY=TRUE AND ROUNDPOINTS>"+intToString(currentCardPoints), "SQL30_40-1-fn_adjustCONF_30_40", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&cardCount)
+	}
+	if cardCount == 0 { // return if there are no card above this card in the suite
+		return
+	}
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF30A_dec_LowerSuiteCards)+" WHERE CARDSUITE='"+currentCard.Suite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL10_20-2-fn_adjustCONF10_20", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF40A_dec_SuiteCards)+" WHERE CARDSUITE='"+currentCard.Suite+"'", "SQL10_20-3-fn_adjustCONF10_20", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_50_60(adjustCONF50A_dec_UpperSuiteCards float32, adjustCONF60A_dec_LowerSuiteCards float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 50A) & 60A) PLAYER LOSE - roundsuite is not trump, Player played roundsuite, didn't win and roundwinner is roundsuite
+	//			player expects to lose, and didn't have round cards above roundwinner
+	//			assumption 50A - player didn't have higher cards than roundwinner - *if the roundwinner is opposing side
+	//			assumption 60A - player didn't have lower cards than the round cardcard he played
+	if roundSuite == trumpSuite || currentCard.Suite != roundSuite || currentPlayerID == currentRoundWinnerID || currentRoundWinnerCard.Suite != roundSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	if currentRoundWinnerID%2 != currentPlayerID%2 { //roundwinner and current player in opposing teams
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF50A_dec_UpperSuiteCards)+" WHERE CARDSUITE='"+currentCard.Suite+"' AND ROUNDPOINTS>"+intToString(currentRoundWinnerPoints), "SQL-A3nHVTXhlunEfI64zG3La8kudx09kTQu", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	}
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF60A_dec_LowerSuiteCards)+" WHERE CARDSUITE='"+currentCard.Suite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-A3nHVTXhlunEfI64zG3La8kudx09kTQu", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_70(adjustCONF70A_dec_LowerSuiteCards float32, currentPlayerID int, currentCard CardValue, currentCardPoints int, currentRoundWinnerID int, currentRoundWinnerCard CardValue,
+	currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 70A) PLAYER LOSE - roundsuite is not trump, Player played roundsuite, didn't win and roundwinner is a trump
+	//			player expects to lose, had roundcards but already round won by trump card
+	//			assumption 60A - player didn't have lower cards than the round cardcard he played
+	if roundSuite == trumpSuite || currentPlayerID == currentRoundWinnerID || currentCard.Suite != roundSuite || currentRoundWinnerCard.Suite != trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF70A_dec_LowerSuiteCards)+" WHERE CARDSUITE='"+currentCard.Suite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-RoLgCn8NIsmOLhBcqRtELYyiQtLhEsOZ", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_80(adjustCONF80A_dec_NonTrumpCards float32, adjustCONF80B_dec_TrumpsBelowPlayed float32, adjustCONF80C_dec_TrumpsAboveWinner float32,
+	currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 80A/B) PLAYER LOSE - roundsuite is not trump, Player played trumpCard, didn't win and roundwinner is a trump
+	//			player expects to lose, didn't have any other cards except trumps
+	//			assumption 80A - didn't have any other cards except trumps
+	//			assumption 80B - player doesn't have lower trumps than played *if the roundwinner is same side
+	// 			assumption 80C - player deosn't have higher trumps than roundwinner  *if the roundwinner is opposing side
+	if currentPlayerID == currentRoundWinnerID || roundSuite == trumpSuite || currentCard.Suite != trumpSuite || currentRoundWinnerCard.Suite != trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF80A_dec_NonTrumpCards)+" WHERE CARDSUITE<>'"+trumpSuite+"'", "SQL-boVihZoTxn9VR3ojKt7TwbplTGkCfvMP", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+	if currentRoundWinnerID%2 == currentPlayerID%2 { // winner is same team
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF80B_dec_TrumpsBelowPlayed)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-G05tyXQR30hTOcHSrX25ZyJ6TRJSWp18", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	} else {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF80C_dec_TrumpsAboveWinner)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS>"+intToString(currentRoundWinnerPoints), "SQL-hWdQs1wqtRtEcOlXGIAJ1ByRgRjniqfh", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	}
+}
+
+func fn_adjustCONF_85(adjustCONF85A_dec_NonRoundCards float32, adjustCONF85B_dec_TrumpsAbovePlayed float32, adjustCONF85C_dec_OtherSuitesBelow float32,
+	currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 85A/B) PLAYER LOSE - roundsuite is not trump, Player played non round non trump card
+	//			player expects to lose, didn't have any roundcards or trumpcards
+	//			assumption 85A - didn't have lesser cards in the suite played
+	//			assumption 85B - player didn't have trump cards above the roundwinner *if the roundwinner is opposing side
+	//			assumption 85C - player didn't have lesser points cards than the one played in other suites *if the roundwinner is same side
+	if currentPlayerID == currentRoundWinnerID || roundSuite == trumpSuite || currentCard.Suite == roundSuite || currentCard.Suite == trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF85A_dec_NonRoundCards)+" WHERE CARDSUITE='"+currentCard.Suite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-ikSrkV910tNhz4coHq13byQVUNmtQq1y", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+	if currentRoundWinnerID%2 == currentPlayerID%2 { // winner is same team 85C
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF85C_dec_OtherSuitesBelow)+" WHERE CARDSUITE<>'"+trumpSuite+"' AND CARDSUITE<>'"+currentCard.Suite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-qRHho9V2Oz2m5PrO7ILAd9jTcsvy1ZUm", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	} else { // 85B
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF85B_dec_TrumpsAbovePlayed)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS>"+intToString(currentRoundWinnerPoints), "SQL-G05tyXQR30hTOcHSrX25ZyJ6TRJSWp18", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	}
+}
+
+func fn_adjustCONF_90(adjustCONF90A_dec_RoundCardBetween float32,
+	currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string, prevRoundWinnerPoints int) {
+	// --- 90A) PLAYER WINS -  roundsuite is not trump, Player played roundsuite
+	//			player expects to win
+	//			assumption 90A - player don't have round cards more than prev roundwinner and less than card player played
+	if currentPlayerID != currentRoundWinnerID || roundSuite == trumpSuite || currentCard.Suite != roundSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF90A_dec_RoundCardBetween)+" WHERE CARDSUITE='"+currentCard.Suite+"' AND ROUNDPOINTS>"+intToString(prevRoundWinnerPoints)+" AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-r6HgwBC3hRL7CWcgLlluSjkyHa7kJvnR", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_100(adjustCONF100A_dec_LesserTrump float32, adjustCONF100B_dec_BetweenTrump float32,
+	currentPlayerID int, currentCard CardValue, currentCardPoints int, currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int,
+	roundSuite string, trumpSuite string, prevRoundWinnerPoints int, prevRoundWinnerCard CardValue) {
+	// --- 100A/B) PLAYER WINS -  roundsuite is not trump, Player played trumpsuite
+	//			player expects to win
+	//			assumption 100A - prev roundwinner is roundcard, player don't have lesser trump cards than the one player played
+	// 			assumption 100B - prev roundwinner is trumpcard, player don't have trump more than prev roundwinner and the less than the card that player played
+	if currentPlayerID != currentRoundWinnerID || roundSuite == trumpSuite || currentCard.Suite != trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	if prevRoundWinnerCard.Suite == roundSuite {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF100A_dec_LesserTrump)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-F5p4GmJSrmX7TmKA8ZeFyh41slSfTx9N", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	} else if prevRoundWinnerCard.Suite == trumpSuite {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF100A_dec_LesserTrump)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints)+" AND ROUNDPOINTS>"+intToString(prevRoundWinnerPoints), "SQL-ZacNjwLfLZ113Wx1JasfH1eQ4KRVDbha", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	}
+}
+
+func fn_adjustCONF_105(adjustCONF105A_dec_LesserTrump float32, adjustCONF105B_dec_HigherTrump float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 105A) PLAYER LOSES -  roundsuite is trump, Player played trumpsuite below roundwinner
+	//			player expects to lose
+	//			assumption 105A - roundwinner is trump, player doesn't have lesser trump cards than the one player played *if the roundwinner is same side
+	// 			assumption 105B - roundwinner is trump, player doesn't have higher trump cards than the the roundwinner *if the roundwinner is oppositing side
+	if currentPlayerID == currentRoundWinnerID || trumpSuite != roundSuite || currentCard.Suite != trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	if currentRoundWinnerID%2 == currentPlayerID%2 { // same team
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF105A_dec_LesserTrump)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-jDJkCs6SEeI9WDudJPJSLzfaGfdDJwmI", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	} else {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF105B_dec_HigherTrump)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS>"+intToString(currentCardPoints), "SQL-TcVXZJ1e16YW0v2Ekmphvc9QCyegsOFg", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	}
+}
+
+func fn_adjustCONF_106(adjustCONF106A_dec_LesserTrump float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string,
+	prevRoundWinnerPoints int, prevRoundWinnerCard CardValue) {
+	// --- 106A) PLAYER WINS -  roundsuite is trump, Player played trumpsuite above roundwinner
+	//			player expects to win, becuase there are no trump cards less than played card above roundwinner
+	//			assumption 106A - roundwinner is trump, player don't have trump cards less than played card and above roundwinner
+	if currentPlayerID != currentRoundWinnerID || roundSuite != trumpSuite || currentCard.Suite != trumpSuite || prevRoundWinnerCard.Suite != trumpSuite || currentCardPoints < prevRoundWinnerPoints {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF106A_dec_LesserTrump)+" WHERE CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints)+" AND ROUNDPOINTS>"+intToString(prevRoundWinnerPoints), "SQL-TcVXZJ1e16YW0v2Ekmphvc9QCyegsOFg", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_107(adjustCONF107A_dec_NonTrumpCards float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 107A/B) PLAYER LOSES - roundsuite is trump, roundwinner is trump
+	//			player expects to lose - player plays other suite
+	//			assumption 107A: player doesn't have cards with points less than the one played
+	//			assumption 107B - player didn't have lesser points cards than the one played in other suites
+	if currentPlayerID == currentRoundWinnerID || roundSuite != trumpSuite || currentRoundWinnerCard.Suite != trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF107A_dec_NonTrumpCards)+" WHERE ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-TcVXZJ1e16YW0v2Ekmphvc9QCyegsOFg", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_110(adjustCONF110A_dec_LowerSuite float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// FOR PLAYERS IN MIDDLE OF THE ROUND ///////////////////////////////////////////////////////////////////
+	// --- 110A) - roundsuite is not trump, roundwinner is not trump
+	//			player expects to lose - player plays roundsuite above roundwinner when higher than played suite card are still in play
+	//			assumption 110A - playter doesn't have round cards below the card played
+	if roundSuite == trumpSuite || currentRoundWinnerID != currentPlayerID || currentCard.Suite == trumpSuite {
+		return
+	}
+	var cardCount int = 0
+	var dbResponse bool = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+currentCard.Suite+"' AND INPLAY=TRUE AND ROUNDPOINTS>"+intToString(currentCardPoints), "SQL-bh4TPM0qZ3z0yrtiMoOFk3zU5Sj8Oz5J", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&cardCount)
+	}
+	if cardCount == 0 { // return if there are no card above this card in the suite
+		return
+	}
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF110A_dec_LowerSuite)+" WHERE ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_120(adjustCONF120A_dec_LesserSuite float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 120A) - roundsuite is not trump, roundwinner is not trump
+	//			player expects to lose - player plays roundsutite below roundwinner
+	//			assumption 120A - playter doesn't have round cards below the card played
+	if roundSuite == trumpSuite || currentRoundWinnerID == currentPlayerID || currentCard.Suite == trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF120A_dec_LesserSuite)+" WHERE CARDSUITE='"+roundSuite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_140(adjustCONF140A_dec_LesserTrump float32, adjustCONF140B_dec_AboveTrump float32, adjustCONF140C_dec_OtherSuiteExcptTrump float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 140A) - roundsuite is not trump, roundwinner is trump
+	//			player expects to lose - player plays trumpsuite below roundwinner
+	//			assumption 140A - playter doesn't have trump cards below the card played
+	//          assumption 140B - playter deosn't have trump cards above roundwinner *if roundwinner is opposing side
+	//			assumption 140C - player doesn't have other suite cards
+	if roundSuite == trumpSuite || currentRoundWinnerID == currentPlayerID || currentRoundWinnerCard.Suite != trumpSuite || currentCard.Suite != trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF140A_dec_LesserTrump)+" WHERE ROUNDPOINTS<"+intToString(currentCardPoints)+" AND CARDSUITE='"+trumpSuite+"'", "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+	if currentRoundWinnerID%2 != currentPlayerID%2 {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF140B_dec_AboveTrump)+" WHERE ROUNDPOINTS>"+intToString(currentRoundWinnerPoints)+" AND CARDSUITE='"+trumpSuite+"'", "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	}
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF140C_dec_OtherSuiteExcptTrump)+" WHERE CARDSUITE<>'"+trumpSuite+"' AND CARDSUITE<>'"+roundSuite+"'", "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_160(adjustCONF160A_dec_NonRoundCards float32, adjustCONF160B_dec_TrumpsAbovePlayed float32, adjustCONF160C_dec_OtherSuitesBelow float32,
+	currentPlayerID int, currentCard CardValue, currentCardPoints int, currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int,
+	roundSuite string, trumpSuite string) {
+	// -- 160A) - roundsuite is not trump, roundwinner is trump
+	//			player expects to lose - player plays other suite
+	//			assumption 160A: player doesn't have cards with points less than the one played
+	//			assumption 160B - player didn't have trump cards above the roundwinner *if roundwinner is opposing side
+	//			assumption 160C - player didn't have lesser points cards than the one played in other suites
+	if roundSuite == trumpSuite || currentRoundWinnerCard.Suite != trumpSuite || currentCard.Suite == trumpSuite || currentCard.Suite == roundSuite || currentPlayerID == currentRoundWinnerID {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF160A_dec_NonRoundCards)+" WHERE ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+	if currentRoundWinnerID%2 != currentPlayerID%2 {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF160B_dec_TrumpsAbovePlayed)+" WHERE ROUNDPOINTS>"+intToString(currentRoundWinnerPoints)+" AND CARDSUITE='"+trumpSuite+"'", "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+		if res == nil || !dbResponse {
+			os.Exit(1)
+		}
+	}
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF160C_dec_OtherSuitesBelow)+" WHERE CARDSUITE<>'"+trumpSuite+"' AND CARDSUITE<>'"+roundSuite+"' AND ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_170(adjustCONF170A_dec_LesserTrump float32, currentPlayerID int, currentCard CardValue, currentCardPoints int, currentRoundWinnerID int, currentRoundWinnerCard CardValue,
+	currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 170A) PLAYER LOSES -  roundsuite is trump, Player played trumpsuite below roundwinner
+	//			player expects to lose
+	//			assumption 105A - roundwinner is trump, player don't have lesser trump cards than the one player played
+	if currentPlayerID == currentRoundWinnerID || roundSuite != trumpSuite || currentCard.Suite != trumpSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF170A_dec_LesserTrump)+" WHERE ROUNDPOINTS<"+intToString(currentCardPoints)+" AND CARDSUITE='"+trumpSuite+"'", "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_180(adjustCONF180A_dec_LesserTrump float32, currentPlayerID int, currentCard CardValue, currentCardPoints int, currentRoundWinnerID int,
+	currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 180A) PLAYER LOSES -  roundsuite is trump, Player played trumpsuite above roundwinner
+	//			player expects to lose, there are higher trump cards than what player played
+	//			assumption 106A - roundwinner is trump, player don't have lesser trump cards than the one player played
+	if currentPlayerID != currentRoundWinnerID || roundSuite != trumpSuite || currentCard.Suite != trumpSuite {
+		return
+	}
+	var cardCount int = 0
+	var dbResponse bool = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+trumpSuite+"' AND INPLAY=TRUE AND ROUNDPOINTS>"+intToString(currentCardPoints), "SQL-bh4TPM0qZ3z0yrtiMoOFk3zU5Sj8Oz5J", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&cardCount)
+	}
+	if cardCount == 0 { // return if there are no card above this card in the suite
+		return
+	}
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF180A_dec_LesserTrump)+" WHERE ROUNDPOINTS<"+intToString(currentCardPoints)+" AND CARDSUITE='"+trumpSuite+"'", "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
+func fn_adjustCONF_190(adjustCONF190A_dec_NonRoundCards float32, currentPlayerID int, currentCard CardValue, currentCardPoints int,
+	currentRoundWinnerID int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundSuite string, trumpSuite string) {
+	// --- 190A/B) PLAYER LOSES - roundsuite is trump, roundwinner is trump
+	//			player expects to lose - player plays other suite
+	//			assumption 190A: player doesn't have cards with points less than the one played
+	if currentPlayerID == currentRoundWinnerID || roundSuite != trumpSuite || currentRoundWinnerCard.Suite != trumpSuite || currentCard.Suite == trumpSuite || currentCard.Suite == roundSuite {
+		return
+	}
+	var dbResponse bool = false
+	var res sql.Result
+	res, dbResponse = executeOnDB("UPDATE CARDS SET "+plConfUpdateString(currentPlayerID, adjustCONF190A_dec_NonRoundCards)+" WHERE ROUNDPOINTS<"+intToString(currentCardPoints), "SQL-0sbERVJWu0KdmnRxa5quutANbqOYyol2", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
 func main() {
 
 	cardNames := [13]string{"ace", "king", "queen", "jack", "ten", "nine", "eight", "seven", "six", "five", "four", "three", "two"}
@@ -1284,8 +2023,120 @@ func main() {
 	cardSuitesAb := [4]string{"h", "s", "d", "c"}
 	var pointsAddForRoundSuite int = 1000
 	var pointsAddForTrumpSuite int = 2000
-	var cardConfidenceAtStart int = 128
-	cardConfidenceAddForTrumpcCaller := [13]int{32, 24, 18, 12, 10, 8, 6, 4, 2, 1, 1, 1, 1}
+	var cardConfidenceAtStart int = 10000
+	cardConfidenceAddForTrumpcCaller := [13]float32{1.150, 1.150, 1.150, 1.150, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100}
+	// cardConfidenceAddForTrumpcCaller---------------A      K      Q      J      10     9      8      7      6      5      4      3      2
+	//************  roundwinner = the max card on round before player played
+	// FOR ROUND STARTERS ////////////////////////////////////////////////////////////////////////////////////
+	// --- 10A) & 20A) player plays a non trump non ace card from lower half of the suite, when aces are still in game
+	//			player expects to : lose, aces will be played agaist that card
+	//          assumption 10A - player doesn't have that ace card
+	//			assumption 20A - player doesn't have other non trump aces
+	var adjustCONF10A_dec_SuiteAce float32 = 0.350
+	var adjustCONF20A_dec_NonSuiteAce float32 = 0.500
+	// --- 30A) & 40A) player plays a non trump card, when higher card from the same suite are still in game
+	//		  	player expects to : lose, that there will be higher cards from the same suite challenging that card,
+	//        	assumption 30A - player doesn't have lower cards from that suite
+	//		 	assumption 40A - player wants to get rid if that suite
+	var adjustCONF30A_dec_LowerSuiteCards float32 = 0.500
+	var adjustCONF40A_dec_SuiteCards float32 = 0.850
+	// FOR ROUND ENDERS ////////////////////////////////////////////////////////////////////////////////////
+	// --- 50A) & 60A) PLAYER LOSE - roundsuite is not trump, Player played roundsuite, didn't win and roundwinner is roundsuite
+	//			player expects to lose, and didn't have round cards above roundwinner
+	//			assumption 50A - player didn't have higher cards than roundwinner - *if the roundwinner is opposing side
+	//			assumption 60A - player didn't have lower cards than the round cardcard he played
+	var adjustCONF50A_dec_UpperSuiteCards float32 = 0.250
+	var adjustCONF60A_dec_LowerSuiteCards float32 = 0.250
+	// --- 70A) PLAYER LOSE - roundsuite is not trump, Player played roundsuite, didn't win and roundwinner is a trump
+	//			player expects to lose, had roundcards but already round won by trump card
+	//			assumption 60A - player didn't have lower cards than the round cardcard he played
+	var adjustCONF70A_dec_LowerSuiteCards float32 = 0.250
+	// --- 80A/B) PLAYER LOSE - roundsuite is not trump, Player played trumpCard, didn't win and roundwinner is a trump
+	//			player expects to lose, didn't have any other cards except trumps
+	//			assumption 80A - didn't have any other cards except trumps
+	//			assumption 80B - player doesn't have lower trumps than played *if the roundwinner is same side
+	// 			assumption 80C - player deosn't have higher trumps than roundwinner  *if the roundwinner is opposing side
+	var adjustCONF80A_dec_NonTrumpCards float32 = 0.250
+	var adjustCONF80B_dec_TrumpsBelowPlayed float32 = 0.250
+	var adjustCONF80C_dec_TrumpsAboveWinner float32 = 0.250
+	// --- 85A/B) PLAYER LOSE - roundsuite is not trump, Player played non round non trump card
+	//			player expects to lose, didn't have any roundcards or trumpcards
+	//			assumption 85A - didn't have lesser cards in the suite played
+	//			assumption 85B - player didn't have trump cards above the roundwinner *if the roundwinner is opposing side
+	//			assumption 85C - player didn't have lesser points cards than the one played in other suites *if the roundwinner is same side
+	var adjustCONF85A_dec_NonRoundCards float32 = 0.200
+	var adjustCONF85B_dec_TrumpsAbovePlayed float32 = 0.200
+	var adjustCONF85C_dec_OtherSuitesBelow float32 = 0.200
+	// --- 90A) PLAYER WINS -  roundsuite is not trump, Player played roundsuite
+	//			player expects to win
+	//			assumption 90A - player don't have round cards more than prev roundwinner and less than card player played
+	var adjustCONF90A_dec_RoundCardBetween float32 = 0.2000
+	// --- 100A/B) PLAYER WINS -  roundsuite is not trump, Player played trumpsuite
+	//			player expects to win
+	//			assumption 100A - prev roundwinner is roundcard, player don't have lesser trump cards that the one player played
+	// 			assumption 100B - prev roundwinner is trumpcard, player don't have trump more than prev roundwinner and the less than the card that player played
+	var adjustCONF100A_dec_LesserTrump float32 = 0.200
+	var adjustCONF100B_dec_BetweenTrump float32 = 0.200
+	// --- 105A) PLAYER LOSES -  roundsuite is trump, Player played trumpsuite below roundwinner
+	//			player expects to lose
+	//			assumption 105A - roundwinner is trump, player don't have lesser trump cards than the one player played *if the roundwinner is same side
+	// 			assumption 105B - roundwinner is trump, player don't have higher trump cards than the the roundwinner *if the roundwinner is oppositing side
+	var adjustCONF105A_dec_LesserTrump float32 = 0.200
+	var adjustCONF105B_dec_HigherTrump float32 = 0.200
+	// --- 106A) PLAYER WINS -  roundsuite is trump, Player played trumpsuite above roundwinner
+	//			player expects to win, becuase there are no trump cards less than played card above roundwinner
+	//			assumption 106A - roundwinner is trump, player don't have trump cards less than played card and above roundwinner
+	var adjustCONF106A_dec_LesserTrump float32 = 0.200
+	// --- 107A/B) PLAYER LOSES - roundsuite is trump, roundwinner is trump
+	//			player expects to lose - player plays other suite
+	//			assumption 107A: player doesn't have cards with points less than the one played in non trump Suites
+	var adjustCONF107A_dec_NonTrumpCards float32 = 0.200
+	// FOR PLAYERS IN MIDDLE OF THE ROUND ///////////////////////////////////////////////////////////////////
+	// --- 110A) - roundsuite is not trump, roundwinner is not trump
+	//			player expects to lose - player plays roundsuite above roundwinner when higher than played suite card are still in play
+	//			assumption 110A - playter doesn't have round cards below the card played
+	var adjustCONF110A_dec_LowerSuite float32 = 0.750
+	// --- 120A) - roundsuite is not trump, roundwinner is not trump
+	//			player expects to lose - player plays roundsutite below roundwinner
+	//			assumption 120A - playter doesn't have round cards below the card played
+	var adjustCONF120A_dec_LesserSuite float32 = 0.500
+	// --- 130A) - roundsuite is not trump, roundwinner is trump
+	//			player expects to lose - player plays roundsutite
+	//			assumption - same as above two conditons
+
+	// --- 140A) - roundsuite is not trump, roundwinner is trump
+	//			player expects to lose - player plays trumpsuite below roundwinner
+	//			assumption 140A - playter doesn't have trump cards below the card played
+	//          assumption 140B - playter deosn't have trump cards above roundwinner *if roundwinner is opposing side
+	//			assumption 140C - player doesn't have other suite cards
+	var adjustCONF140A_dec_LesserTrump float32 = 0.200
+	var adjustCONF140B_dec_AboveTrump float32 = 0.500
+	var adjustCONF140C_dec_OtherSuiteExcptTrump float32 = 0.200
+	// -- 150A) - roundsuite is not trump, roundwinner is trump
+	//			player expects to win - player plays trumpsuite above roundwinner
+	//			assumption: Can't predict on trump confidence
+	//
+	// -- 160A) - roundsuite is not trump, roundwinner is trump
+	//			player expects to lose - player plays other suite
+	//			assumption 160A: player doesn't have cards with points less than the one played
+	//			assumption 160B - player didn't have trump cards above the roundwinner
+	//			assumption 160C - player didn't have lesser points cards than the one played in other suites
+	var adjustCONF160A_dec_NonRoundCards float32 = 0.200
+	var adjustCONF160B_dec_TrumpsAbovePlayed float32 = 0.500
+	var adjustCONF160C_dec_OtherSuitesBelow float32 = 0.200
+	// --- 170A) PLAYER LOSES -  roundsuite is trump, Player played trumpsuite below roundwinner
+	//			player expects to lose
+	//			assumption 105A - roundwinner is trump, player don't have lesser trump cards than the one player played
+	var adjustCONF170A_dec_LesserTrump float32 = 0.200
+	// --- 180A) PLAYER LOSES -  roundsuite is trump, Player played trumpsuite above roundwinner
+	//			player expects to lose, there are higher trump cards than what player played
+	//			assumption 106A - roundwinner is trump, player don't have lesser trump cards than the one player played
+	var adjustCONF180A_dec_LesserTrump float32 = 0.750
+	// --- 190A/B) PLAYER LOSES - roundsuite is trump, roundwinner is trump
+	//			player expects to lose - player plays other suite
+	//			assumption 190A: player doesn't have cards with points less than the one played
+	//			assumption 190B - player didn't have lesser points cards than the one played in other suites
+	var adjustCONF190A_dec_NonRoundCards float32 = 0.200
 
 	var err error
 	db, err = sql.Open("sqlite3", "./oormi_card_game.db") // disk - for debugging
@@ -1304,9 +2155,9 @@ func main() {
 	var cardsPerPlayer int = getCardsPerPlayer(noOfPlayers)
 	var cardsPerSuite int = (cardsPerPlayer * noOfPlayers) / 4
 	//	var totalCardsInGame int = cardsPerPlayer * noOfPlayers
-	initPlayersTab(noOfPlayers)                // insert player info plater tab
-	initCardsTab(cardsPerSuite, cardPoints)    // remove unused cards
-	initRoundsTab(cardsPerPlayer, noOfPlayers) // init records of rounds
+	initPlayersTab(noOfPlayers)                          // insert player info plater tab
+	initCardsTab(cardsPerSuite, cardPoints, noOfPlayers) // remove unused cards
+	initRoundsTab(cardsPerPlayer, noOfPlayers)           // init records of rounds
 	showCardsInGame(cardsPerSuite, cardNames)
 	var ourTrumps bool
 	var trumpsCaller int = getTrumpsCaller(noOfPlayers, &ourTrumps)
@@ -1331,6 +2182,10 @@ func main() {
 		var currentRoundWinnerName string = "nul-player"
 		var currentRoundWinnerCard CardValue
 		var currentRoundWinnerPoints int = 0
+		//		var prevRoundWinnerID int = -1
+		//		var prevRoundWinnerName string = "nul-player"
+		var prevRoundWinnerCard CardValue
+		var prevRoundWinnerPoints int = 0
 		resetPlayersTabPlayedInRound()
 		for playerInRound := 0; playerInRound < noOfPlayers; playerInRound++ { // for every player
 			var playedRoundSuite bool = true     // if the palyer played round suite
@@ -1371,7 +2226,7 @@ func main() {
 				var currentCardPoints int = 0
 				var currentCardIndex string = "nul"
 				var currentCardIsRoundWinner bool = false
-				if playerInRound == 0 {
+				if playerInRound == 0 { // round starter
 					roundSuite = currentCard.Suite
 					if roundSuite != trumpSuite {
 						updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite, roundSuite)
@@ -1380,8 +2235,39 @@ func main() {
 					updatePlayersTabPlayedInRound(currentPlayerID)
 					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex)
-					//////////////////////////////////////// NEED MORE CRITERIA ///////////////////////
-				} else {
+					//////////////////////////////////////// CRITERIA TO ADJUST PLCONF ///////////////////////
+					fn_adjustCONF_10_20(adjustCONF10A_dec_SuiteAce, adjustCONF20A_dec_NonSuiteAce, currentCard, currentCardPoints, cardNames, cardsPerSuite, trumpSuite, currentPlayerID)
+					fn_adjustCONF_30_40(adjustCONF30A_dec_LowerSuiteCards, adjustCONF40A_dec_SuiteCards, currentCard, currentCardPoints, trumpSuite, currentPlayerID)
+					///////////////////////////////////////////////////////////////////////////////////////////////
+
+				} else if playerInRound == (noOfPlayers - 1) { // round ender
+					if roundSuite != currentCard.Suite {
+						updatePlayersTabProbForRoundSuite(roundSuite, roundNo, currentPlayerID) // Players probability set to minus value for round
+						updateCardsTabForRoundSuiteProb(roundSuite, currentPlayerID)            // Cards probabaility make 0 for roundsite cards for this player
+						playedRoundSuite = false
+						if currentCard.Suite == trumpSuite {
+							playedNonRoundTrump = true
+						}
+					}
+					updatePlayersTabPlayedInRound(currentPlayerID)
+					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
+					//					prevRoundWinnerID = currentRoundWinnerID
+					//					prevRoundWinnerName = currentRoundWinnerName
+					prevRoundWinnerCard = currentRoundWinnerCard
+					prevRoundWinnerPoints = currentRoundWinnerPoints
+					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex)
+					//////////////////////////////////////// CRITERIA TO ADJUST PLCONF ///////////////////////
+					fn_adjustCONF_50_60(adjustCONF50A_dec_UpperSuiteCards, adjustCONF60A_dec_LowerSuiteCards, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_70(adjustCONF70A_dec_LowerSuiteCards, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_80(adjustCONF80A_dec_NonTrumpCards, adjustCONF80B_dec_TrumpsBelowPlayed, adjustCONF80C_dec_TrumpsAboveWinner, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_85(adjustCONF85A_dec_NonRoundCards, adjustCONF85B_dec_TrumpsAbovePlayed, adjustCONF85C_dec_OtherSuitesBelow, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_90(adjustCONF90A_dec_RoundCardBetween, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite, prevRoundWinnerPoints)
+					fn_adjustCONF_100(adjustCONF100A_dec_LesserTrump, adjustCONF100B_dec_BetweenTrump, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite, prevRoundWinnerPoints, prevRoundWinnerCard)
+					fn_adjustCONF_105(adjustCONF105A_dec_LesserTrump, adjustCONF105B_dec_HigherTrump, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_106(adjustCONF106A_dec_LesserTrump, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite, prevRoundWinnerPoints, prevRoundWinnerCard)
+					fn_adjustCONF_107(adjustCONF107A_dec_NonTrumpCards, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					///////////////////////////////////////////////////////////////////////////////////////////////
+				} else { // round mid
 					if roundSuite != currentCard.Suite {
 						updatePlayersTabProbForRoundSuite(roundSuite, roundNo, currentPlayerID) // Players probability set to minus value for round
 						updateCardsTabForRoundSuiteProb(roundSuite, currentPlayerID)            // Cards probabaility make 0 for roundsite cards for this player
@@ -1393,7 +2279,15 @@ func main() {
 					updatePlayersTabPlayedInRound(currentPlayerID)
 					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex)
-					//////////////////////////////////////// NEED MORE CRITERIA ///////////////////////
+					//////////////////////////////////////// CRITERIA TO ADJUST PLCONF ///////////////////////
+					fn_adjustCONF_110(adjustCONF110A_dec_LowerSuite, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_120(adjustCONF120A_dec_LesserSuite, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_140(adjustCONF140A_dec_LesserTrump, adjustCONF140B_dec_AboveTrump, adjustCONF140C_dec_OtherSuiteExcptTrump, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_160(adjustCONF160A_dec_NonRoundCards, adjustCONF160B_dec_TrumpsAbovePlayed, adjustCONF160C_dec_OtherSuitesBelow, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_170(adjustCONF170A_dec_LesserTrump, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_180(adjustCONF180A_dec_LesserTrump, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					fn_adjustCONF_190(adjustCONF190A_dec_NonRoundCards, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
+					///////////////////////////////////////////////////////////////////////////////////////////
 				}
 
 				fmt.Println(playedRoundSuite, playedNonRoundTrump, currentCardIsRoundWinner)
@@ -1427,12 +2321,21 @@ func main() {
 							myCardPlayCondition = 40
 							break
 						}
+						currentCard = getMinFromANonTrumpSuiteIfFriendsHaveMorePossibilityOfMaxOfThatSuiteAndFoesHaveNoTrumps(trumpSuite, noOfPlayers, cardSuites, cardPoints, cardsPerSuite) // 40
+						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 44
+							break
+						}
+						currentCard = getMinFromANonTrumpSuiteIfFriendsHaveMaxOfThatSuiteAndFoesHaveLessPossibilityOfTrumps(trumpSuite, noOfPlayers, cardSuites, cardPoints, cardsPerSuite) // 40
+						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 46
+							break
+						}
 						currentCard = getMinCardIfIHaveOneMinCardFromANonTrumpSuite(trumpSuite, cardSuites, cardPoints, cardsPerSuite) // 50
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 50
 							break
 						}
-						/////////////////// more methods ?? ////////////////////////////////////////////////////////
 						currentCard = getMyMinPointsCard() // 60
 						myCardPlayCondition = 60
 						break
@@ -1475,18 +2378,41 @@ func main() {
 					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForMyPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex, myCardPlayCondition)
 				} else { // i'm not the round starter or last player
-					/////////// NOT OBVIOUS CHOISES //////////////////////
+					/////////// NOT OBVIOUS CHOICES //////////////////////
 					currentCard.Suite = "nul"
 					for currentCard.Suite == "nul" {
-						currentCard = getMaxRoundCardInMyHand(roundSuite) ///////////////////////// get my Max RoundCard /////////////////////////
+						currentCard = getMaxRoundCardIfIHaveItInMyHandIfItsAboveCurrentWinner(roundSuite, currentRoundWinnerPoints) ///////////////////////// get my Max RoundCard /////////////////////////
 						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 110
+							break
+						}
+						/*currentCard = getMaxRoundCardInMyHand(roundSuite) ///////////////////////// get my Max RoundCard /////////////////////////
+						if currentCard.Suite != "nul" {
+							break
+						}*/
+						currentCard = getMinRoundCardInMyHand(roundSuite) ///////////////////////// get my Max RoundCard /////////////////////////
+						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 130
+							break
+						}
+						currentCard = getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite) //////////////////////////////get my Max trump Card ////////////////////
+						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 140
 							break
 						}
 						currentCard = getMaxTrumpCardInMyHand(trumpSuite) //////////////////////////////get my Max trump Card ////////////////////
 						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 170
 							break
 						}
-						currentCard = getARandomCardInMyHand() ////////////////////////getMaxNonRoundNonTrumpCardInMyHand //////////////////
+						//currentCard = getARandomCardInMyHand()
+						currentCard = getMinCardIfIHaveOneMinCardFromANonTrumpSuite(trumpSuite, cardSuites, cardPoints, cardsPerSuite)
+						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 190
+							break
+						}
+						currentCard = getMyMinPointsCard()
+						myCardPlayCondition = 200
 						break
 					}
 					updatePlayersTabPlayedInRound(currentPlayerID)
@@ -1496,7 +2422,7 @@ func main() {
 				fmt.Println("You Played : ", currentCard)
 				fmt.Println(currentCardIsRoundWinner) // REMOVE
 			}
-			printCardsPlayedInRound(roundNo, currentRoundWinnerCard)
+			printCardsPlayedInRound(roundNo, currentRoundWinnerCard, trumpSuite)
 			if gameResult != 0 {
 				break
 			}
@@ -1523,8 +2449,8 @@ func main() {
 	} else if gameResult > 0 {
 		fmt.Println("**** Your Team WON THE GAME ******************")
 	} else {
-		fmt.Println("Your Team won ", friendPoints, " rounds")
-		fmt.Println("Opposing Team won ", foePoints, " rounds")
+		fmt.Println("Your Team won     : ", friendPoints, " rounds")
+		fmt.Println("Opposing Team won : ", foePoints, " rounds")
 		if friendPoints > foePoints {
 			fmt.Println("**** Your Team WON THE GAME ******************")
 		} else if friendPoints < foePoints {
