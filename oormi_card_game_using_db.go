@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -406,15 +407,7 @@ func addCardsToHandAndGetTrump(cardNames [13]string, cardsPerSuite int, cardsPer
 func executeOnDB(sqlString string, indetifier string, exitOnErr bool) (sql.Result, bool) {
 	var res sql.Result
 	//////////////////////////////////////////////////////////
-	tx, err := db.Begin()
-	if err != nil {
-		fmt.Println("PREPARE: " + indetifier)
-		log.Println(err)
-		if exitOnErr {
-			os.Exit(1)
-		}
-		return res, false
-	}
+	time.Sleep(70 * time.Millisecond)
 	/////////////////////////////////////////////////////////
 	statement, err := db.Prepare(sqlString)
 	if err != nil {
@@ -435,21 +428,16 @@ func executeOnDB(sqlString string, indetifier string, exitOnErr bool) (sql.Resul
 		return res, false
 	}
 	//////////////////////////////////////////////////////////
-	err = tx.Commit()
-	if err != nil {
-		fmt.Println("EXEC: " + indetifier)
-		log.Println(err)
-		if exitOnErr {
-			os.Exit(1)
-		}
-		return res, false
-	}
+	time.Sleep(30 * time.Millisecond)
 	///////////////////////////////////////////////////////
 	return res, true
 }
 
 func queryFromDB(sqlString string, indetifier string, exitOnErr bool) (*sql.Rows, bool) {
 	var rows *sql.Rows
+	//////////////////////////////////////////////////////////
+	time.Sleep(70 * time.Millisecond)
+	/////////////////////////////////////////////////////////
 	statement, err := db.Prepare(sqlString)
 	if err != nil {
 		fmt.Println("PREPARE: " + indetifier)
@@ -468,6 +456,9 @@ func queryFromDB(sqlString string, indetifier string, exitOnErr bool) (*sql.Rows
 		}
 		return rows, false
 	}
+	//////////////////////////////////////////////////////////
+	time.Sleep(30 * time.Millisecond)
+	///////////////////////////////////////////////////////
 	return rows, true
 }
 
@@ -2050,8 +2041,8 @@ func main() {
 
 	cardNames := [13]string{"ace", "king", "queen", "jack", "ten", "nine", "eight", "seven", "six", "five", "four", "three", "two"}
 	cardNamesAb := [13]string{"a", "k", "q", "j", "t", "9", "8", "7", "6", "5", "4", "3", "2"}
-	cardPoints := [13]int{50, 38, 29, 22, 17, 13, 10, 8, 6, 5, 4, 3, 2}
-	// Points -------------A   K   Q   J  10  9  8  7  6  5  4  3  2
+	cardPoints := [13]int{45, 38, 29, 22, 17, 13, 10, 8, 6, 5, 4, 3, 2}
+	// Points -------------A   K   Q   J  10   9   8  7  6  5  4  3  2
 	cardSuites := [4]string{"hearts", "spades", "diamonds", "clubs"}
 	cardSuitesAb := [4]string{"h", "s", "d", "c"}
 	var pointsAddForRoundSuite int = 1000
