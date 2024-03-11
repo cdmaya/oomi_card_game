@@ -157,7 +157,7 @@ func inputCardValue(cardNames []string, cardsPerSuite int, cardNo int) CardValue
 			fmt.Print(" ")
 		}
 		fmt.Println()
-		fmt.Println("Insert Card (ace-a/A. king-k/K, queen-q/A, jack-j/J, ten-10, nine-9, eight-8, seven-7, six-6, five-5, four-4, three-3. two-2)")
+		fmt.Println("Insert Card (ace-a/A. king-k/K, queen-q/A, jack-j/J, ten-t/T, nine-9, eight-8, seven-7, six-6, five-5, four-4, three-3. two-2)")
 		fmt.Print("Insert Card : ")
 		fmt.Scanln(&name)
 		if name == "a" || name == "A" {
@@ -172,7 +172,7 @@ func inputCardValue(cardNames []string, cardsPerSuite int, cardNo int) CardValue
 		} else if name == "j" || name == "J" {
 			name = "jack"
 			break
-		} else if name == "10" {
+		} else if name == "10" || name == "t" || name == "T" {
 			name = "ten"
 			break
 		} else if name == "9" {
@@ -261,20 +261,19 @@ func addCardToHandAndFindMyTrump(cardNames [13]string, cardsPerSuite int, cardsP
 					clubsPoints = clubsPoints + cardPoints
 				}
 				fmt.Println("**** Card Added to your hand:", inputCard)
-				//showCardsInHand(cards)
 				res, dbResponse = executeOnDB("UPDATE CARDS SET INMYHAND = true, PLCONF1 = 0,  PLCONF2 = 0,  PLCONF3 = 0,  PLCONF4 = 0,  PLCONF5 = 0,  PLCONF6 = 0,  PLCONF7 = 0 WHERE CARDSUITE = '"+inputCard.Suite+"' AND CARDNAME = '"+inputCard.Name+"'", "SQL0003-UPDATE CARDS SET INMYHAND = true ...", true)
 				if res == nil || !dbResponse {
 					os.Exit(1)
 				}
 				cardNo++
+				printMyHand()
 				break
 			} else {
-				fmt.Println("Cannot add this card:", inputCard)
+				fmt.Println("!!!!! Cannot add this card:", inputCard)
 				fmt.Println("It might be already added or not used in the game")
-				//showCardsInHand(cards)
+				printMyHand()
 				continue
 			}
-			printMyHand()
 		}
 	}
 
@@ -318,17 +317,17 @@ func addCardToHandAndFindMyTrump(cardNames [13]string, cardsPerSuite int, cardsP
 			}
 			if cardPoints != 0 {
 				fmt.Println("**** Card Added to your hand:", inputCard)
-				//showCardsInHand(cards)
 				res, dbResponse = executeOnDB("UPDATE CARDS SET INMYHAND = true, PLCONF1 = 0,  PLCONF2 = 0,  PLCONF3 = 0,  PLCONF4 = 0,  PLCONF5 = 0,  PLCONF6 = 0,  PLCONF7 = 0 WHERE CARDSUITE = '"+inputCard.Suite+"' AND CARDNAME = '"+inputCard.Name+"'", "SQL0005-UPDATE CARDS SET INMYHAND = true ...", true)
 				if res == nil || !dbResponse {
 					os.Exit(1)
 				}
 				cardNo++
+				printMyHand()
 				break
 			} else {
 				fmt.Println("Cannot add this card:", inputCard)
 				fmt.Println("It might be already added or not used in the game")
-				//showCardsInHand(cards)
+				printMyHand()
 				continue
 			}
 		}
@@ -359,21 +358,20 @@ func addCardsToHandAndGetTrump(cardNames [13]string, cardsPerSuite int, cardsPer
 			}
 			if cardPoints != 0 {
 				fmt.Println("**** Card Added to your hand:", inputCard)
-				//showCardsInHand(cards)
 				res, dbResponse = executeOnDB("UPDATE CARDS SET INMYHAND = true, PLCONF1 = 0,  PLCONF2 = 0,  PLCONF3 = 0,  PLCONF4 = 0,  PLCONF5 = 0,  PLCONF6 = 0,  PLCONF7 = 0 WHERE CARDSUITE = '"+inputCard.Suite+"' AND CARDNAME = '"+inputCard.Name+"'", "SQL0007-UPDATE CARDS SET INMYHAND = true ...", true)
 				if res == nil || !dbResponse {
 					os.Exit(1)
 				}
 				cardNo++
+				printMyHand()
 				break
 			} else {
 				fmt.Println("Cannot add this card:", inputCard)
 				fmt.Println("It might be already added or not used in the game")
-				//showCardsInHand(cards)
+				printMyHand()
 				continue
 			}
 		}
-		printMyHand()
 	}
 	for { //while Trump is given
 		var confirm string
@@ -407,6 +405,17 @@ func addCardsToHandAndGetTrump(cardNames [13]string, cardsPerSuite int, cardsPer
 
 func executeOnDB(sqlString string, indetifier string, exitOnErr bool) (sql.Result, bool) {
 	var res sql.Result
+	//////////////////////////////////////////////////////////
+	tx, err := db.Begin()
+	if err != nil {
+		fmt.Println("PREPARE: " + indetifier)
+		log.Println(err)
+		if exitOnErr {
+			os.Exit(1)
+		}
+		return res, false
+	}
+	/////////////////////////////////////////////////////////
 	statement, err := db.Prepare(sqlString)
 	if err != nil {
 		fmt.Println("PREPARE: " + indetifier)
@@ -425,6 +434,17 @@ func executeOnDB(sqlString string, indetifier string, exitOnErr bool) (sql.Resul
 		}
 		return res, false
 	}
+	//////////////////////////////////////////////////////////
+	err = tx.Commit()
+	if err != nil {
+		fmt.Println("EXEC: " + indetifier)
+		log.Println(err)
+		if exitOnErr {
+			os.Exit(1)
+		}
+		return res, false
+	}
+	///////////////////////////////////////////////////////
 	return res, true
 }
 
@@ -671,7 +691,7 @@ func getPlayCard(cardNames []string, cardsPerSuite int) CardValue {
 			fmt.Print(" ")
 		}
 		fmt.Println()
-		fmt.Println("Insert Card (ace-a/A. king-k/K, queen-q/A, jack-j/J, ten-10, nine-9, eight-8, seven-7, six-6, five-5, four-4, three-3. two-2)")
+		fmt.Println("Insert Card (ace-a/A. king-k/K, queen-q/A, jack-j/J, ten-t/T, nine-9, eight-8, seven-7, six-6, five-5, four-4, three-3. two-2)")
 		fmt.Print("Insert Card : ")
 		fmt.Scanln(&name)
 		if name == "a" || name == "A" {
@@ -686,7 +706,7 @@ func getPlayCard(cardNames []string, cardsPerSuite int) CardValue {
 		} else if name == "j" || name == "J" {
 			name = "jack"
 			break
-		} else if name == "10" {
+		} else if name == "t" || name == "T" || name == "10" {
 			name = "ten"
 			break
 		} else if name == "9" {
@@ -2014,11 +2034,24 @@ func fn_adjustCONF_190(adjustCONF190A_dec_NonRoundCards float32, currentPlayerID
 	}
 }
 
+func nulPrint1(playedRoundSuite bool, playedNonRoundTrump bool, currentCardIsRoundWinner bool) {
+	if playedRoundSuite && playedNonRoundTrump && currentCardIsRoundWinner {
+
+	}
+}
+
+func nulPrint2(currentCardIsRoundWinner bool) {
+	if currentCardIsRoundWinner {
+
+	}
+}
+
 func main() {
 
 	cardNames := [13]string{"ace", "king", "queen", "jack", "ten", "nine", "eight", "seven", "six", "five", "four", "three", "two"}
 	cardNamesAb := [13]string{"a", "k", "q", "j", "t", "9", "8", "7", "6", "5", "4", "3", "2"}
-	cardPoints := [13]int{378, 234, 145, 90, 56, 35, 22, 14, 9, 6, 4, 3, 2}
+	cardPoints := [13]int{50, 38, 29, 22, 17, 13, 10, 8, 6, 5, 4, 3, 2}
+	// Points -------------A   K   Q   J  10  9  8  7  6  5  4  3  2
 	cardSuites := [4]string{"hearts", "spades", "diamonds", "clubs"}
 	cardSuitesAb := [4]string{"h", "s", "d", "c"}
 	var pointsAddForRoundSuite int = 1000
@@ -2290,7 +2323,7 @@ func main() {
 					///////////////////////////////////////////////////////////////////////////////////////////
 				}
 
-				fmt.Println(playedRoundSuite, playedNonRoundTrump, currentCardIsRoundWinner)
+				nulPrint1(playedRoundSuite, playedNonRoundTrump, currentCardIsRoundWinner) //////  REMOVE REMOVE REMOVE REMOVE ///////////////////////////
 
 			} else { // my card play
 				var currentCardPoints int = 0
@@ -2420,7 +2453,7 @@ func main() {
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForMyPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex, myCardPlayCondition)
 				}
 				fmt.Println("You Played : ", currentCard)
-				fmt.Println(currentCardIsRoundWinner) // REMOVE
+				nulPrint2(currentCardIsRoundWinner) //////  REMOVE REMOVE REMOVE REMOVE ///////////////////////////
 			}
 			printCardsPlayedInRound(roundNo, currentRoundWinnerCard, trumpSuite)
 			if gameResult != 0 {
