@@ -12,6 +12,10 @@ import (
 )
 
 var db *sql.DB
+var dbType string = "sqlite3"
+var dbPath string = "./oormi_card_game.db"
+
+//var dbPath string = ":memory:"
 
 type CardValue struct {
 	Suite string
@@ -136,22 +140,16 @@ func inputCardValue(cardNames []string, cardsPerSuite int, cardNo int) CardValue
 		fmt.Scanln(&suite)
 		if suite == "h" || suite == "H" {
 			suite = "hearts"
-			break
 		} else if suite == "d" || suite == "D" {
 			suite = "diamonds"
-			break
 		} else if suite == "s" || suite == "S" {
 			suite = "spades"
-			break
 		} else if suite == "c" || suite == "C" {
 			suite = "clubs"
-			break
 		} else {
 			fmt.Println("Wrong Suite Name. Must be of of : hearts-h/H, dianmonds-d/D, spades-s/S, clubs-c/C")
 			continue
 		}
-	}
-	for {
 		fmt.Print("Available Cards : ")
 		for i := 0; i < cardsPerSuite; i++ {
 			fmt.Print(cardNames[i])
@@ -405,61 +403,58 @@ func addCardsToHandAndGetTrump(cardNames [13]string, cardsPerSuite int, cardsPer
 }
 
 func executeOnDB(sqlString string, indetifier string, exitOnErr bool) (sql.Result, bool) {
+	var err error
+	var dbTryLimit int = 10
+	var returnError bool = true
 	var res sql.Result
-	//////////////////////////////////////////////////////////
-	time.Sleep(70 * time.Millisecond)
-	/////////////////////////////////////////////////////////
-	statement, err := db.Prepare(sqlString)
-	if err != nil {
-		fmt.Println("PREPARE: " + indetifier)
-		log.Println(err)
-		if exitOnErr {
-			os.Exit(1)
+	time.Sleep(50 * time.Millisecond)
+	res, err = db.Exec(sqlString)
+	for t := 0; ; t++ {
+		if err == nil {
+			break
 		}
-		return res, false
-	}
-	res, err = statement.Exec()
-	if err != nil {
-		fmt.Println("EXEC: " + indetifier)
-		log.Println(err)
-		if exitOnErr {
-			os.Exit(1)
+		if err != nil && t >= dbTryLimit {
+			fmt.Println("EXEC: " + indetifier)
+			log.Println(err)
+			if exitOnErr {
+				os.Exit(1)
+			}
+			returnError = false
 		}
-		return res, false
+		time.Sleep(50 * time.Millisecond)
+		fmt.Println("executeOnDB:EXEC ", t)
+		res, err = db.Exec(sqlString)
 	}
-	//////////////////////////////////////////////////////////
-	time.Sleep(30 * time.Millisecond)
-	///////////////////////////////////////////////////////
-	return res, true
+	time.Sleep(500 * time.Millisecond)
+
+	return res, returnError
 }
 
 func queryFromDB(sqlString string, indetifier string, exitOnErr bool) (*sql.Rows, bool) {
+	var err error
+	var dbTryLimit int = 10
+	var returnError bool = true
 	var rows *sql.Rows
-	//////////////////////////////////////////////////////////
-	time.Sleep(70 * time.Millisecond)
-	/////////////////////////////////////////////////////////
-	statement, err := db.Prepare(sqlString)
-	if err != nil {
-		fmt.Println("PREPARE: " + indetifier)
-		log.Println(err)
-		if exitOnErr {
-			os.Exit(1)
+
+	time.Sleep(50 * time.Millisecond)
+	rows, err = db.Query(sqlString)
+	for t := 0; ; t++ {
+		if err == nil {
+			break
 		}
-		return rows, false
-	}
-	rows, err = statement.Query()
-	if err != nil {
-		fmt.Println("QUERY: " + indetifier)
-		log.Println(err)
-		if exitOnErr {
-			os.Exit(1)
+		if err != nil && t >= dbTryLimit {
+			fmt.Println("QUERY: " + indetifier)
+			log.Println(err)
+			if exitOnErr {
+				os.Exit(1)
+			}
+			returnError = false
 		}
-		return rows, false
+		time.Sleep(500 * time.Millisecond)
+		rows, err = db.Query(sqlString)
 	}
-	//////////////////////////////////////////////////////////
-	time.Sleep(30 * time.Millisecond)
-	///////////////////////////////////////////////////////
-	return rows, true
+
+	return rows, returnError
 }
 
 func createCardsTab(cardSuites [4]string, cardSuitesAb [4]string, cardNames [13]string, cardNamesAb [13]string, cardPoints [13]int, cardConfidenceAtStart int) {
@@ -490,7 +485,7 @@ func createPlayersTab() {
 	if res == nil || !dbResponse {
 		os.Exit(1)
 	}
-	res, dbResponse = executeOnDB("CREATE TABLE PLAYERS (PLAYERID INT,PLAYERNAME VARCHAR(32),FRIEND BOOLEAN,PLAYEDINROUND BOOLEAN,HEARTSPROB INT,SPADESPROB INT,DIAMONDSPROB INT,CLUBSPROB INT)", "SQL0011-CREATE TABLE PLAYERS", true)
+	res, dbResponse = executeOnDB("CREATE TABLE PLAYERS (PLAYERID INT,PLAYERNAME VARCHAR(32),FRIEND BOOLEAN,HEARTSPROB INT,SPADESPROB INT,DIAMONDSPROB INT,CLUBSPROB INT)", "SQL0011-CREATE TABLE PLAYERS", true)
 	if res == nil || !dbResponse {
 		os.Exit(1)
 	}
@@ -503,7 +498,7 @@ func createRoundsTab() {
 	if res == nil || !dbResponse {
 		os.Exit(1)
 	}
-	res, dbResponse = executeOnDB("CREATE TABLE ROUNDS (ROUND INT,ROUNDTURN INT,PLAYERID INT,FRIEND BOOLEAN,PLAYERNAME VARCHAR(32),CARDINDEX VARCHAR(2),CARDSUITE VARCHAR(8),CARDNAME VARCHAR(8),ROUNDPOINTS INT,WINNER BOOLEAN,ROUNDSUITE VARCHAR(8),TRUMPSUITE VARCHAR(8),MYCARDPLAYCONDITION INT,NOTE VARCHAR(64))", "SQL0012-CREATE TABLE ROUNDS", true)
+	res, dbResponse = executeOnDB("CREATE TABLE ROUNDS (ROUND INT,ROUNDTURN INT,PLAYERID INT,FRIEND BOOLEAN,PLAYERNAME VARCHAR(32),CARDINDEX VARCHAR(2),CARDSUITE VARCHAR(8),CARDNAME VARCHAR(8),ROUNDPOINTS INT,WINNER INT,ROUNDSUITE VARCHAR(8),TRUMPSUITE VARCHAR(8),MYCARDPLAYCONDITION INT,NOTE VARCHAR(64))", "SQL0012-CREATE TABLE ROUNDS", true)
 	if res == nil || !dbResponse {
 		os.Exit(1)
 	}
@@ -520,7 +515,7 @@ func initPlayersTab(noOfPlayers int) {
 		} else {
 			friend = false
 		}
-		res, dbResponse = executeOnDB("INSERT INTO PLAYERS (PLAYERID,PLAYERNAME,FRIEND,PLAYEDINROUND,HEARTSPROB,SPADESPROB,DIAMONDSPROB,CLUBSPROB) VALUES('"+strconv.Itoa(p)+"','PLAYER"+strconv.Itoa(p)+"','"+strconv.FormatBool(friend)+"',false,1,1,1,1)", "SQL0013-INSERT INTO PLAYERS", true)
+		res, dbResponse = executeOnDB("INSERT INTO PLAYERS (PLAYERID,PLAYERNAME,FRIEND,HEARTSPROB,SPADESPROB,DIAMONDSPROB,CLUBSPROB) VALUES('"+strconv.Itoa(p)+"','PLAYER"+strconv.Itoa(p)+"','"+strconv.FormatBool(friend)+"',1,1,1,1)", "SQL0013-INSERT INTO PLAYERS", true)
 		if res == nil || !dbResponse {
 			os.Exit(1)
 		}
@@ -554,7 +549,7 @@ func initRoundsTab(cardsPerPlayer int, noOfPlayers int) {
 	var dbResponse bool
 	for r := 0; r < cardsPerPlayer; r++ {
 		for p := 0; p < noOfPlayers; p++ {
-			res, dbResponse = executeOnDB("INSERT INTO ROUNDS (ROUND,ROUNDTURN,WINNER) VALUES('"+strconv.Itoa(r)+"','"+strconv.Itoa(p)+"',false)", "SQL0015-INSERT INTO ROUNDS", true)
+			res, dbResponse = executeOnDB("INSERT INTO ROUNDS (ROUND,ROUNDTURN,WINNER) VALUES('"+strconv.Itoa(r)+"','"+strconv.Itoa(p)+"',-1)", "SQL0015-INSERT INTO ROUNDS", true)
 			if res == nil || !dbResponse {
 				os.Exit(1)
 			}
@@ -571,20 +566,27 @@ func updateCardsTabRoundPointsForTrumpSuite(trumpSuite string, pointsAddForTrump
 	}
 }
 
-func printCardsPlayedInRound(roundNo int, roundWinnerCard CardValue, trumpSuite string) {
+func printCardsPlayedInRound(roundNo int, roundWinnerCard CardValue, trumpSuite string, roundSuite string, friendPoints int, foePoints int, currentRoundWinnerID int) {
 	var rows *sql.Rows
 	var dbResponse bool
 	var playerID, playerName, friend, cardSuite, cardName, roundPoints, winner string
-	rows, dbResponse = queryFromDB("SELECT PLAYERID,PLAYERNAME,FRIEND,CARDSUITE,CARDNAME,ROUNDPOINTS,WINNER FROM ROUNDS WHERE ROUND = "+strconv.Itoa(roundNo), "SQL0017-SELECT PLAYERID,PLAYERNAME,FRIEND,CARDSUITE,CARNAME FROM ROUNDS", true)
+	rows, dbResponse = queryFromDB("SELECT PLAYERID,PLAYERNAME,FRIEND,CARDSUITE,CARDNAME,ROUNDPOINTS FROM ROUNDS WHERE ROUND = "+strconv.Itoa(roundNo), "SQL0017-SELECT PLAYERID,PLAYERNAME,FRIEND,CARDSUITE,CARNAME FROM ROUNDS", true)
 	if rows == nil || !dbResponse {
 		os.Exit(1)
 	}
-	fmt.Println("Cards Played in Round : " + strconv.Itoa(roundNo) + " --- ")
-	fmt.Println("Trump 				   : " + trumpSuite + " --- ")
-	fmt.Println("--PLAYERID PLAYERNAME FRIEND CARDSUITE CARDNAME ROUNDPOINTS WINNER")
+	fmt.Println("**** ROUND# : ", strconv.Itoa(roundNo), " INFO ******************************************")
+	fmt.Println("Trump Suite --------- : " + trumpSuite)
+	fmt.Println("Round Suite --------- : " + roundSuite)
+	fmt.Println("Cards Played in Round : " + strconv.Itoa(roundNo) + " **** ")
+	fmt.Println("ID\tNAME\tFRIEND\tSUITE\tCARD\tPTS\tWINNER?")
 	for rows.Next() {
-		rows.Scan(&playerID, &playerName, &friend, &cardSuite, &cardName, &roundPoints, &winner)
-		fmt.Println(playerID + " " + playerName + " " + friend + " " + cardSuite + " " + cardName + " " + roundPoints + " " + winner)
+		rows.Scan(&playerID, &playerName, &friend, &cardSuite, &cardName, &roundPoints)
+		if playerID == intToString(currentRoundWinnerID) {
+			winner = " <-- CURRENT WINNER"
+		} else {
+			winner = ""
+		}
+		fmt.Println(playerID + "\t" + playerName + "\t" + friend + "\t" + cardSuite + "\t" + cardName + "\t" + roundPoints + "\t" + winner)
 		playerID = "------"
 		playerName = "------"
 		friend = "------"
@@ -594,9 +596,13 @@ func printCardsPlayedInRound(roundNo int, roundWinnerCard CardValue, trumpSuite 
 		roundPoints = "------"
 		winner = "------"
 	}
-	fmt.Println("--- Round Winner (So Far) : ", roundWinnerCard)
-	fmt.Println("--- END OF Cards Played in Round --- ")
+	fmt.Println("--- Round Winner (so Far) -------------- : ", roundWinnerCard)
+	fmt.Println("--- Rounds won by your team (so far) --- : ", friendPoints)
+	fmt.Println("--- Rounds won by opposing team (so far) : ", foePoints)
+	fmt.Println("*** END OF ROUND INFO *****************************************************************")
+	fmt.Println()
 	printMyHand()
+	fmt.Println()
 }
 
 func printMyHand() {
@@ -607,13 +613,14 @@ func printMyHand() {
 	if rows == nil || !dbResponse {
 		os.Exit(1)
 	}
-	fmt.Print("Cards in my hand : ")
+	fmt.Println("*** CARDS IN MY HAND ******************************************************************")
 	for rows.Next() {
 		rows.Scan(&myCard)
 		fmt.Print(myCard)
 		fmt.Print("  ")
 	}
 	fmt.Println()
+	fmt.Println("*** END OF CARDS IN MY HAND **********************************************************")
 }
 
 func getCurrentPlayerName(currentPlayerID int) string {
@@ -660,22 +667,16 @@ func getPlayCard(cardNames []string, cardsPerSuite int) CardValue {
 		fmt.Scanln(&suite)
 		if suite == "h" || suite == "H" {
 			suite = "hearts"
-			break
 		} else if suite == "d" || suite == "D" {
 			suite = "diamonds"
-			break
 		} else if suite == "s" || suite == "S" {
 			suite = "spades"
-			break
 		} else if suite == "c" || suite == "C" {
 			suite = "clubs"
-			break
 		} else {
 			fmt.Println("Wrong Suite Name. Must be of of : hearts-h/H, dianmonds-d/D, spades-s/S, clubs-c/C")
 			continue
 		}
-	}
-	for {
 		fmt.Print("Available Cards : ")
 		for i := 0; i < cardsPerSuite; i++ {
 			fmt.Print(cardNames[i])
@@ -830,10 +831,16 @@ func updateCardsTabForRoundSuiteProb(roundSuite string, currentPlayerID int) { /
 	}
 }
 
-func updateCardsTabForPlayedCard(currentPlayerID int, currentCard CardValue) (string, int) {
+func updateCardsTabForPlayedCard(currentPlayerID int, currentCard CardValue, noOfPlayers int) (string, int) {
 	var res sql.Result
 	var dbResponse bool = false
-	res, dbResponse = executeOnDB("UPDATE CARDS SET INPLAY=false,INMYHAND=false,PLCONF1=0,PLCONF2=0,PLCONF3=0,PLCONF4=0,PLCONF5= 0,PLCONF6=0,PLCONF7=0 WHERE CARDSUITE='"+currentCard.Suite+"' AND CARDNAME='"+currentCard.Name+"'", "SQL0033-UPDATE CARDS SET INPLAY=false", true)
+	if noOfPlayers == 4 {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET INPLAY=false,INMYHAND=false,PLCONF1=0,PLCONF2=0,PLCONF3=0 WHERE CARDSUITE='"+currentCard.Suite+"' AND CARDNAME='"+currentCard.Name+"'", "SQL0033-UPDATE CARDS SET INPLAY=false", true)
+	} else if noOfPlayers == 6 {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET INPLAY=false,INMYHAND=false,PLCONF1=0,PLCONF2=0,PLCONF3=0,PLCONF4=0,PLCONF5=0 WHERE CARDSUITE='"+currentCard.Suite+"' AND CARDNAME='"+currentCard.Name+"'", "SQL0033-UPDATE CARDS SET INPLAY=false", true)
+	} else {
+		res, dbResponse = executeOnDB("UPDATE CARDS SET INPLAY=false,INMYHAND=false,PLCONF1=0,PLCONF2=0,PLCONF3=0,PLCONF4=0,PLCONF5=0,PLCONF6=0,PLCONF7=0 WHERE CARDSUITE='"+currentCard.Suite+"' AND CARDNAME='"+currentCard.Name+"'", "SQL0033-UPDATE CARDS SET INPLAY=false", true)
+	}
 	if res == nil || !dbResponse {
 		os.Exit(1)
 	}
@@ -976,27 +983,20 @@ func checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID int, currentCard CardValue,
 	return false
 }
 
-func checkIfFoesDoNotHaveHigerTrumpConfidence(currentCard CardValue, roundPoints int, trumpSuite string) bool {
-	var dbResponse bool = false
-	var rows *sql.Rows
-	var foeID int
-	rows, dbResponse = queryFromDB("SELECT PLAYERID FROM PLAYERS WHERE PLAYEDINROUND=true AND PLAYERID IN (1,3,5,7)", "SQL-mKu7OrRZyDB5vTpfBrfCcxfOKpn5av8Q", true)
-	if !dbResponse {
-		os.Exit(1)
-	}
-	if rows == nil {
-		return true
-	}
-	for rows.Next() {
-		rows.Scan(&foeID)
-		if checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID, currentCard, roundPoints, trumpSuite) {
-			return false
+func checkIfFoesDoNotHaveHigerTrumpConfidence(playedInRound [8]int, currentCard CardValue, roundPoints int, trumpSuite string) bool {
+	for foeID := 0; foeID < len(playedInRound); foeID++ {
+		if foeID == 1 || foeID == 3 || foeID == 5 || foeID == 7 {
+			if playedInRound[foeID] == 0 {
+				if checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID, currentCard, roundPoints, trumpSuite) {
+					return false
+				}
+			}
 		}
 	}
 	return true
 }
 
-func getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite string) CardValue {
+func getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite string, playedInRound [8]int) CardValue {
 	var currentCard, returnCard, nulCard CardValue
 	var dbResponse bool = false
 	var rows *sql.Rows
@@ -1015,7 +1015,7 @@ func getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trump
 	}
 	for rows.Next() {
 		rows.Scan(&currentCard.Suite, &currentCard.Name, &roundPoints)
-		if checkIfFoesDoNotHaveHigerTrumpConfidence(currentCard, roundPoints, trumpSuite) {
+		if checkIfFoesDoNotHaveHigerTrumpConfidence(playedInRound, currentCard, roundPoints, trumpSuite) {
 			returnCard.Suite = currentCard.Suite
 			returnCard.Name = currentCard.Name
 		} else {
@@ -1125,10 +1125,11 @@ func getMaxRoundCardPointsInMyHand(roundSuite string) int {
 
 func getMaxTrumpCardInMyHand(trumpSuite string) CardValue {
 	var currentCard CardValue
+	var garbageInt int = 0
 	var dbResponse bool = false
 	var rows *sql.Rows
 	currentCard.Suite = "nul"
-	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME FROM CARDS WHERE INPLAY=true and INMYHAND=true AND CARDSUITE='"+trumpSuite+"' ORDER BY ROUNDPOINTS DESC LIMIT 1", "SQL0044-SELECT CARDSUITE,CARDNAME FROM CARDS", true)
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MAX(ROUNDPOINTS) FROM CARDS WHERE INPLAY=true and INMYHAND=true AND CARDSUITE='"+trumpSuite+"'", "SQL-iNNWre84D2ilFem4vh06LPKtyCiMxdJS", true)
 	if !dbResponse {
 		os.Exit(1)
 	}
@@ -1136,7 +1137,7 @@ func getMaxTrumpCardInMyHand(trumpSuite string) CardValue {
 		return currentCard
 	}
 	for rows.Next() {
-		rows.Scan(&currentCard.Suite, &currentCard.Name)
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &garbageInt)
 	}
 	return currentCard
 }
@@ -1564,22 +1565,16 @@ func getATrumpCardInMyHandToCloseRound(trumpSuite string, currentRoundWinnerPoin
 	}
 }
 
-func resetPlayersTabPlayedInRound() {
-	var res sql.Result
-	var dbResponse bool = false
-	res, dbResponse = executeOnDB("UPDATE PLAYERS SET PLAYEDINROUND=false", "SQL00511-UPDATE PLAYERS SET PLAYEDINROUND=false", true)
-	if res == nil || !dbResponse {
-		os.Exit(1)
+func resetPlayersTabPlayedInRound(noOfPlayers int, playedInRound [8]int) [8]int {
+	for p := 0; p < noOfPlayers; p++ {
+		playedInRound[p] = 0
 	}
+	return playedInRound
 }
 
-func updatePlayersTabPlayedInRound(currentPlayerID int) {
-	var res sql.Result
-	var dbResponse bool = false
-	res, dbResponse = executeOnDB("UPDATE PLAYERS SET PLAYEDINROUND=true WHERE PLAYERID="+strconv.Itoa(currentPlayerID), "SQL00512-UPDATE PLAYERS SET PLAYEDINROUND=false", true)
-	if res == nil || !dbResponse {
-		os.Exit(1)
-	}
+func updatePlayersTabPlayedInRound(currentPlayerID int, playedInRound [8]int) [8]int {
+	playedInRound[currentPlayerID] = 1
+	return playedInRound
 }
 
 func calcNewConfidence(oldConfidence int, factor float32) int {
@@ -2025,6 +2020,41 @@ func fn_adjustCONF_190(adjustCONF190A_dec_NonRoundCards float32, currentPlayerID
 	}
 }
 
+func printGameRounds() {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT ROUND,ROUNDTURN,PLAYERID,FRIEND,PLAYERNAME,CARDSUITE,CARDNAME,WINNER,ROUNDSUITE,TRUMPSUITE from ROUNDS ORDER BY ROUND,ROUNDTURN", "SQL-ZPHkMHLpv2ijqceRlKyjOfcs79lHHlNa", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		var round, roundTurn, playerID, winnerID int
+		var friendB bool
+		var teamS, playerName, cardSuite, cardName, winnerS, roundSuite, trumpSuite string
+		cardSuite = "nul"
+		playerID = -1
+		rows.Scan(&round, &roundTurn, &playerID, &friendB, &playerName, &cardSuite, &cardName, &winnerID, &roundSuite, &trumpSuite)
+		if friendB {
+			teamS = "Friend"
+		} else {
+			teamS = "Foe  "
+		}
+		if winnerID == playerID {
+			winnerS = "ROUND WINNER"
+		} else {
+			winnerS = "            "
+		}
+		if roundTurn == 0 {
+			fmt.Println()
+			fmt.Println("*** ROUND: ", intToString(round), ", TRUMP-SUITE: ", trumpSuite, ", ROUND-SUITE: ", roundSuite)
+			fmt.Println("#\tID\tNAME\tTEAM\tPLAYEDCARD\tWINNER?---")
+		}
+		if cardSuite != "nul" {
+			fmt.Println(intToString(roundTurn), "\t", intToString(playerID), "\t", playerName, "\t", teamS, "\t", cardSuite, "-", cardName, "\t", winnerS)
+		}
+	}
+}
+
 func nulPrint1(playedRoundSuite bool, playedNonRoundTrump bool, currentCardIsRoundWinner bool) {
 	if playedRoundSuite && playedNonRoundTrump && currentCardIsRoundWinner {
 
@@ -2050,6 +2080,7 @@ func main() {
 	var cardConfidenceAtStart int = 10000
 	cardConfidenceAddForTrumpcCaller := [13]float32{1.150, 1.150, 1.150, 1.150, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100, 1.100}
 	// cardConfidenceAddForTrumpcCaller---------------A      K      Q      J      10     9      8      7      6      5      4      3      2
+	playedInRound := [8]int{-1, -1, -1, -1, -1, -1, -1, -1}
 	//************  roundwinner = the max card on round before player played
 	// FOR ROUND STARTERS ////////////////////////////////////////////////////////////////////////////////////
 	// --- 10A) & 20A) player plays a non trump non ace card from lower half of the suite, when aces are still in game
@@ -2163,10 +2194,16 @@ func main() {
 	var adjustCONF190A_dec_NonRoundCards float32 = 0.200
 
 	var err error
-	db, err = sql.Open("sqlite3", "./oormi_card_game.db") // disk - for debugging
-	// db, err = sql.Open("sqlite3", ":memory:") // memory - faster
+	db, err = sql.Open(dbType, dbPath)
 	if err != nil {
-		fmt.Println("SQLERR - func main : Opening DB File")
+		fmt.Println("SQLERR-main:Opening DB File")
+		log.Println(err)
+		os.Exit(1)
+	}
+	defer db.Close()
+	_, err = db.Exec("PRAGMA journal_mode=WAL")
+	if err != nil {
+		fmt.Println("SQLERR-main:PRAGMA journal_mode=WAL")
 		log.Println(err)
 		os.Exit(1)
 	}
@@ -2210,7 +2247,7 @@ func main() {
 		//		var prevRoundWinnerName string = "nul-player"
 		var prevRoundWinnerCard CardValue
 		var prevRoundWinnerPoints int = 0
-		resetPlayersTabPlayedInRound()
+		playedInRound = resetPlayersTabPlayedInRound(noOfPlayers, playedInRound)
 		for playerInRound := 0; playerInRound < noOfPlayers; playerInRound++ { // for every player
 			var playedRoundSuite bool = true     // if the palyer played round suite
 			var playedNonRoundTrump bool = false // if the player played trump when he played a non round card
@@ -2256,8 +2293,8 @@ func main() {
 						updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite, roundSuite)
 					}
 					updateRoundsTabWithRoundSuite(roundSuite, roundNo)
-					updatePlayersTabPlayedInRound(currentPlayerID)
-					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
+					playedInRound = updatePlayersTabPlayedInRound(currentPlayerID, playedInRound)
+					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard, noOfPlayers)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex)
 					//////////////////////////////////////// CRITERIA TO ADJUST PLCONF ///////////////////////
 					fn_adjustCONF_10_20(adjustCONF10A_dec_SuiteAce, adjustCONF20A_dec_NonSuiteAce, currentCard, currentCardPoints, cardNames, cardsPerSuite, trumpSuite, currentPlayerID)
@@ -2273,8 +2310,8 @@ func main() {
 							playedNonRoundTrump = true
 						}
 					}
-					updatePlayersTabPlayedInRound(currentPlayerID)
-					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
+					playedInRound = updatePlayersTabPlayedInRound(currentPlayerID, playedInRound)
+					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard, noOfPlayers)
 					//					prevRoundWinnerID = currentRoundWinnerID
 					//					prevRoundWinnerName = currentRoundWinnerName
 					prevRoundWinnerCard = currentRoundWinnerCard
@@ -2300,8 +2337,8 @@ func main() {
 							playedNonRoundTrump = true
 						}
 					}
-					updatePlayersTabPlayedInRound(currentPlayerID)
-					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
+					playedInRound = updatePlayersTabPlayedInRound(currentPlayerID, playedInRound)
+					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard, noOfPlayers)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex)
 					//////////////////////////////////////// CRITERIA TO ADJUST PLCONF ///////////////////////
 					fn_adjustCONF_110(adjustCONF110A_dec_LowerSuite, currentPlayerID, currentCard, currentCardPoints, currentRoundWinnerID, currentRoundWinnerCard, currentRoundWinnerPoints, roundSuite, trumpSuite)
@@ -2369,8 +2406,8 @@ func main() {
 						updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite, roundSuite)
 					}
 					updateRoundsTabWithRoundSuite(roundSuite, roundNo)
-					updatePlayersTabPlayedInRound(currentPlayerID)
-					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
+					playedInRound = updatePlayersTabPlayedInRound(currentPlayerID, playedInRound)
+					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard, noOfPlayers)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForMyPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex, myCardPlayCondition)
 
 				} else if playerInRound == (noOfPlayers - 1) { // i'm the last player in round
@@ -2398,8 +2435,8 @@ func main() {
 						myCardPlayCondition = 100
 						break
 					}
-					updatePlayersTabPlayedInRound(currentPlayerID)
-					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
+					playedInRound = updatePlayersTabPlayedInRound(currentPlayerID, playedInRound)
+					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard, noOfPlayers)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForMyPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex, myCardPlayCondition)
 				} else { // i'm not the round starter or last player
 					/////////// NOT OBVIOUS CHOICES //////////////////////
@@ -2419,12 +2456,12 @@ func main() {
 							myCardPlayCondition = 130
 							break
 						}
-						currentCard = getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite) //////////////////////////////get my Max trump Card ////////////////////
+						currentCard = getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite, playedInRound) //////////////////////////////get my Max trump Card ////////////////////
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 140
 							break
 						}
-						currentCard = getMaxTrumpCardInMyHand(trumpSuite) //////////////////////////////get my Max trump Card ////////////////////
+						currentCard = getMaxTrumpCardInMyHand(trumpSuite) ///////BEBUG CONDITION//////////
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 170
 							break
@@ -2439,14 +2476,14 @@ func main() {
 						myCardPlayCondition = 200
 						break
 					}
-					updatePlayersTabPlayedInRound(currentPlayerID)
-					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard)
+					playedInRound = updatePlayersTabPlayedInRound(currentPlayerID, playedInRound)
+					currentCardIndex, currentCardPoints = updateCardsTabForPlayedCard(currentPlayerID, currentCard, noOfPlayers)
 					currentCardIsRoundWinner, currentRoundWinnerID, currentRoundWinnerName, currentRoundWinnerCard, currentRoundWinnerPoints = updateRoundsTabForMyPlayedCard(currentPlayerID, currentCard, currentCardPoints, roundNo, playerInRound, currentPlayerTeam, currentPlayerName, currentCardIndex, myCardPlayCondition)
 				}
 				fmt.Println("You Played : ", currentCard)
 				nulPrint2(currentCardIsRoundWinner) //////  REMOVE REMOVE REMOVE REMOVE ///////////////////////////
 			}
-			printCardsPlayedInRound(roundNo, currentRoundWinnerCard, trumpSuite)
+			printCardsPlayedInRound(roundNo, currentRoundWinnerCard, trumpSuite, roundSuite, friendPoints, foePoints, currentRoundWinnerID)
 			if gameResult != 0 {
 				break
 			}
@@ -2457,17 +2494,22 @@ func main() {
 		previousRoundWinner = currentRoundWinnerID
 		updateRoundsTabWithWinner(currentRoundWinnerID, roundNo)
 		if currentRoundWinnerID%2 == 0 {
+			friendPoints++
 			if roundNo < cardsPerPlayer-1 {
 				fmt.Println("**** YOUR TEAM WON THE ROUND. PlayerID : ", previousRoundWinner, " (", currentRoundWinnerName, ") STARTS THE NEXT ROUND ***")
+				fmt.Println("So far, Your Team won     : ", friendPoints, " rounds")
+				fmt.Println("So far, Opposing Team won : ", foePoints, " rounds")
 			}
-			friendPoints++
 		} else {
+			foePoints++
 			if roundNo < cardsPerPlayer-1 {
 				fmt.Println("**** YOUR TEAM LOST THE ROUND. PlayerID : ", previousRoundWinner, "(", currentRoundWinnerName, ") STARTS THE NEXT ROUND ***")
+				fmt.Println("So far, Your Team won     : ", friendPoints, " rounds")
+				fmt.Println("So far, Opposing Team won : ", foePoints, " rounds")
 			}
-			foePoints++
 		}
 	} // rounds in a game end
+	printGameRounds()
 	if gameResult < 0 {
 		fmt.Println("**** Your Team LOST THE GAME ******************")
 	} else if gameResult > 0 {
@@ -2483,4 +2525,5 @@ func main() {
 			fmt.Println("******** GAME DRAW ******************")
 		}
 	}
+	db.Close()
 }
