@@ -1634,11 +1634,11 @@ func findIfFoeHasMoreConfidenceInAnyCardOfThisSuiteThanFreinds(cardSuite string,
 	var rows *sql.Rows
 	var noOfSuiteCardFoesCouldHaveAtHand int = 0
 	if noOfPlayers == 4 {
-		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true and INMYHAND=false (PLCONF"+intToString(foeID)+">PLCONF2)", "SQL-WxLTxpcNmPm6MaQBF1sY7YG8pxHcWOWz", true)
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true and INMYHAND=false AND (PLCONF"+intToString(foeID)+">PLCONF2)", "SQL-WxLTxpcNmPm6MaQBF1sY7YG8pxHcWOWz", true)
 	} else if noOfPlayers == 6 {
-		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true and INMYHAND=false (PLCONF"+intToString(foeID)+">PLCONF2 OR PLCONF"+intToString(foeID)+">PLCONF4)", "SQL-WxLTxpcNmPm6MaQBF1sY7YG8pxHcWOWz", true)
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true and INMYHAND=false AND (PLCONF"+intToString(foeID)+">PLCONF2 OR PLCONF"+intToString(foeID)+">PLCONF4)", "SQL-WxLTxpcNmPm6MaQBF1sY7YG8pxHcWOWz", true)
 	} else { // noOfPlayers == 8
-		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true and INMYHAND=false (PLCONF"+intToString(foeID)+">PLCONF2 OR PLCONF"+intToString(foeID)+">PLCONF4 OR PLCONF"+intToString(foeID)+">PLCONF6)", "SQL-WxLTxpcNmPm6MaQBF1sY7YG8pxHcWOWz", true)
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true and INMYHAND=false AND (PLCONF"+intToString(foeID)+">PLCONF2 OR PLCONF"+intToString(foeID)+">PLCONF4 OR PLCONF"+intToString(foeID)+">PLCONF6)", "SQL-WxLTxpcNmPm6MaQBF1sY7YG8pxHcWOWz", true)
 	}
 	if !dbResponse || rows == nil {
 		os.Exit(1)
