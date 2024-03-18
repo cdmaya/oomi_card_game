@@ -785,10 +785,19 @@ func checkIfSurrentCardSuiteIsLegalForPlayer(currentPlayerID int, currentCardSui
 	}
 }
 
+func resetCardsTabRoundPoints(trumpSuite string) {
+	var res sql.Result
+	var dbResponse bool = false
+	res, dbResponse = executeOnDB("UPDATE CARDS SET ROUNDPOINTS=POINTS WHERE CARDSUITE<>'"+trumpSuite+"'", "SQL-apuSX4ZcWDt4p3vnOOzSYM5baXDhkzHP", true)
+	if res == nil || !dbResponse {
+		os.Exit(1)
+	}
+}
+
 func updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite int, roundSuite string) {
 	var res sql.Result
 	var dbResponse bool = false
-	res, dbResponse = executeOnDB("UPDATE CARDS SET ROUNDPOINTS = (POINTS + "+strconv.Itoa(pointsAddForRoundSuite)+") WHERE CARDSUITE = '"+roundSuite+"'", "SQL0026-UPDATE CARDS SET ROUNDPOINTS... for ROUNDSUITE", true)
+	res, dbResponse = executeOnDB("UPDATE CARDS SET ROUNDPOINTS = (POINTS + "+strconv.Itoa(pointsAddForRoundSuite)+") WHERE CARDSUITE = '"+roundSuite+"'", "SQL-3nyJb7XS1fF5U2xQVKK4I3uIZnzlrL5C", true)
 	if res == nil || !dbResponse {
 		os.Exit(1)
 	}
@@ -950,6 +959,8 @@ func intToString(value int) string {
 	return strconv.Itoa(value)
 }
 
+/* UNUSED FUNCS ////////////////////////////////////
+
 func getARandomCardInMyHand() CardValue {
 	var currentCard CardValue
 	var dbResponse bool = false
@@ -964,11 +975,45 @@ func getARandomCardInMyHand() CardValue {
 	return currentCard
 }
 
-func checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID int, currentCard CardValue, roundPoints int, trumpSuite string) bool {
+*/ /////////////////////////////////////////
+
+func checkIfFoeHasMoreConfidenceOnHigherSuite(foeID int, currentCard CardValue, roundPoints int, cardSuite string, noOfPlayers int) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var higherSuiteCards int = 0
+	if noOfPlayers == 4 {
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true AND INMYHAND=false AND PLCONF"+intToString(foeID)+">=PLCONF2 AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	} else if noOfPlayers == 6 {
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true AND INMYHAND=false AND (PLCONF"+intToString(foeID)+">=PLCONF2 OR PLCONF"+intToString(foeID)+">=PLCONF4) AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	} else {
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardSuite+"' AND INPLAY=true AND INMYHAND=false AND (PLCONF"+intToString(foeID)+">=PLCONF2 OR PLCONF"+intToString(foeID)+">=PLCONF4 OR PLCONF"+intToString(foeID)+">=PLCONF6) AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	}
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return false
+	}
+	for rows.Next() {
+		rows.Scan(&higherSuiteCards)
+		if higherSuiteCards > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID int, currentCard CardValue, roundPoints int, trumpSuite string, noOfPlayers int) bool {
 	var dbResponse bool = false
 	var rows *sql.Rows
 	var higherTrumpCards int = 0
-	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE PLCONF"+intToString(foeID)+">=PLCONF1 AND PLCONF"+intToString(foeID)+">=PLCONF2 AND PLCONF"+intToString(foeID)+">=PLCONF3 AND PLCONF"+intToString(foeID)+">=PLCONF4 AND PLCONF"+intToString(foeID)+">=PLCONF5 AND PLCONF"+intToString(foeID)+">=PLCONF6 AND PLCONF"+intToString(foeID)+">=PLCONF7 AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	if noOfPlayers == 4 {
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE INPLAY=true AND INMYHAND=false AND PLCONF"+intToString(foeID)+">PLCONF2 AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	} else if noOfPlayers == 6 {
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE INPLAY=true AND INMYHAND=false AND PLCONF"+intToString(foeID)+">PLCONF2 AND PLCONF"+intToString(foeID)+">PLCONF4 AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	} else {
+		rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE INPLAY=true AND INMYHAND=false AND PLCONF"+intToString(foeID)+">PLCONF2 AND PLCONF"+intToString(foeID)+">PLCONF4 AND PLCONF"+intToString(foeID)+">PLCONF6 AND ROUNDPOINTS>"+intToString(roundPoints), "SQL-me3pn6UsQ61bbdjVJEuzRlTQwzLK2XCl", true)
+	}
 	if !dbResponse {
 		os.Exit(1)
 	}
@@ -984,59 +1029,77 @@ func checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID int, currentCard CardValue,
 	return false
 }
 
-func checkIfFoesDoNotHaveHigerTrumpConfidence(playedInRound [8]int, currentCard CardValue, roundPoints int, trumpSuite string) bool {
-	for foeID := 0; foeID < len(playedInRound); foeID++ {
-		if foeID == 1 || foeID == 3 || foeID == 5 || foeID == 7 {
-			if playedInRound[foeID] == 0 {
-				if checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID, currentCard, roundPoints, trumpSuite) {
-					return false
-				}
+func playedRoundCardIsTheMaxCardInGamExceptMyHand(roundSuite string, currentRoundWinnerPoints int) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var noOfHigherCardInGameButNotInMyHand int
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE INPLAY=true AND INMYHAND=false AND CARDSUITE='"+roundSuite+"' AND ROUNDPOINTS>"+intToString(currentRoundWinnerPoints), "SQL0040-SELECT CARDSUITE,CARDNAME ", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&noOfHigherCardInGameButNotInMyHand)
+	}
+	if noOfHigherCardInGameButNotInMyHand == 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
+func allRemaningFoesDontHaveRoundSuite(roundSuite string, noOfPlayers int, playedInRound [8]int) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	for p := 0; p < len(playedInRound); p++ {
+		if playedInRound[p] == 0 && p%2 == 1 {
+			var playerHaveSuite int
+			rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM PLAYERS WHERE PLAYERID="+intToString(p)+" AND "+roundSuite+"PROB=1", "SQL-5uMxWibYSoKQfJkAcNvN39STq717QFqx", true)
+			if !dbResponse || rows == nil {
+				os.Exit(1)
+			}
+			for rows.Next() {
+				rows.Scan(&playerHaveSuite)
+			}
+			if playerHaveSuite != 0 {
+				return false
 			}
 		}
 	}
 	return true
 }
 
-func getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite string, playedInRound [8]int) CardValue {
-	var currentCard, returnCard, nulCard CardValue
+func cardsCanBeInFoeHandsBetweenMyMaxRoundAndCurrentWinner(currentRoundWinnerPoints int, roundPoints int, roundSuite string, playedInRound [8]int, noOfPlayers int) bool {
 	var dbResponse bool = false
 	var rows *sql.Rows
-	var roundPoints int = 0
-	nulCard.Suite = "nul"
-	returnCard.Suite = "nul"
-	if countSuiteCardsInMyHand(trumpSuite) == 0 {
-		return nulCard
-	}
-	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,ROUNDPOINTS FROM CARDS WHERE INMYHAND=true AND INPLAY=true AND CARDSUITE='"+trumpSuite+"' ORDER BY ROUNDPOINTS ASC", "SQL0040-SELECT CARDSUITE,CARDNAME ", true)
+	var noOfCardsBetweenCurrentWinnerAndMe int
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE INPLAY=true AND INMYHAND=false AND CARDSUITE='"+roundSuite+"' AND ROUNDPOINTS>"+intToString(currentRoundWinnerPoints)+" AND ROUNDPOINTS<"+intToString(roundPoints), "SQL0040-SELECT CARDSUITE,CARDNAME ", true)
 	if !dbResponse {
 		os.Exit(1)
 	}
-	if rows == nil {
-		return nulCard
-	}
 	for rows.Next() {
-		rows.Scan(&currentCard.Suite, &currentCard.Name, &roundPoints)
-		if checkIfFoesDoNotHaveHigerTrumpConfidence(playedInRound, currentCard, roundPoints, trumpSuite) {
-			returnCard.Suite = currentCard.Suite
-			returnCard.Name = currentCard.Name
-		} else {
-			continue
-		}
+		rows.Scan(&noOfCardsBetweenCurrentWinnerAndMe)
 	}
-	if returnCard.Suite != nulCard.Suite {
-		return returnCard
+	if noOfCardsBetweenCurrentWinnerAndMe == 0 {
+		return false
 	} else {
-		return nulCard
+		if allRemaningFoesDontHaveRoundSuite(roundSuite, noOfPlayers, playedInRound) {
+			return false
+		} else {
+			return true
+		}
 	}
 }
 
-func getMaxRoundCardIfIHaveItInMyHandIfItsAboveCurrentWinner(roundSuite string, currentRoundWinnerPoints int) CardValue {
+func getMaxRoundCardIfIHaveItInMyHandIfItsAboveCurrentWinner(roundSuite string, currentRoundWinnerPoints int, currentRoundWinnerID int, playedInRound [8]int, noOfPlayers int) CardValue {
 	var currentCard, nulCard CardValue
 	var dbResponse bool = false
 	var rows *sql.Rows
 	var inMyHand bool = false
 	var roundPoints int = 0
 	nulCard.Suite = "nul"
+	if currentRoundWinnerID%2 == 0 && playedRoundCardIsTheMaxCardInGamExceptMyHand(roundSuite, currentRoundWinnerPoints) {
+		return nulCard
+	}
 	rows, dbResponse = queryFromDB("SELECT INMYHAND,CARDSUITE,CARDNAME,ROUNDPOINTS FROM CARDS WHERE INPLAY=true AND CARDSUITE='"+roundSuite+"' ORDER BY ROUNDPOINTS DESC LIMIT 1", "SQL0040-SELECT CARDSUITE,CARDNAME ", true)
 	if !dbResponse {
 		os.Exit(1)
@@ -1046,6 +1109,9 @@ func getMaxRoundCardIfIHaveItInMyHandIfItsAboveCurrentWinner(roundSuite string, 
 	}
 	for rows.Next() {
 		rows.Scan(&inMyHand, &currentCard.Suite, &currentCard.Name, &roundPoints)
+	}
+	if currentRoundWinnerID%2 == 0 && !cardsCanBeInFoeHandsBetweenMyMaxRoundAndCurrentWinner(currentRoundWinnerPoints, roundPoints, roundSuite, playedInRound, noOfPlayers) {
+		return nulCard
 	}
 	if inMyHand && roundPoints > currentRoundWinnerPoints {
 		return currentCard
@@ -1124,9 +1190,9 @@ func getMaxRoundCardPointsInMyHand(roundSuite string) int {
 	return cardPoints
 }
 
-func getMaxTrumpCardInMyHand(trumpSuite string) CardValue {
+func getMaxTrumpCardInMyHand(trumpSuite string) (int, CardValue) {
 	var currentCard CardValue
-	var garbageInt int = 0
+	var roundPoints int = 0
 	var dbResponse bool = false
 	var rows *sql.Rows
 	currentCard.Suite = "nul"
@@ -1135,12 +1201,12 @@ func getMaxTrumpCardInMyHand(trumpSuite string) CardValue {
 		os.Exit(1)
 	}
 	if rows == nil {
-		return currentCard
+		return roundPoints, currentCard
 	}
 	for rows.Next() {
-		rows.Scan(&currentCard.Suite, &currentCard.Name, &garbageInt)
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &roundPoints)
 	}
-	return currentCard
+	return roundPoints, currentCard
 }
 
 func getANonTrumpAceInMyHand(trumpSuite string) CardValue {
@@ -1435,6 +1501,171 @@ func getMinFromANonTrumpSuiteIfFriendsHaveMorePossibilityOfMaxOfThatSuiteAndFoes
 	}
 }
 
+func reaminingNoOfSuiteCardsIsLessThanNoOfPlayers(roundSuite string, noOfPlayers int) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var remainingNoOfCards int
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+roundSuite+"' AND INPLAY=true AND INMYHAND=false", "SQL-Uv4bpGMX5DuDRvnpjb8Idkul8RCfcP6k", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&remainingNoOfCards)
+	}
+	if remainingNoOfCards <= noOfPlayers {
+		return true
+	} else {
+		return false
+	}
+}
+
+func allReaminingFoesMightHaveRoundSuiteCardsAndWillNotCut(roundSuite string, trumpSuite string, noOfPlayers int, playedInRound [8]int) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	for p := 0; p < len(playedInRound); p++ {
+		if playedInRound[p] == 0 && p%2 == 1 {
+			var playerHaveSuite int
+			rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM PLAYERS WHERE PLAYERID="+intToString(p)+" AND "+roundSuite+"PROB=1", "SQL-5uMxWibYSoKQfJkAcNvN39STq717QFqx", true)
+			if !dbResponse || rows == nil {
+				os.Exit(1)
+			}
+			for rows.Next() {
+				rows.Scan(&playerHaveSuite)
+			}
+			if playerHaveSuite == 0 {
+				if checkIfPlayerCanHaveTrumps(p, trumpSuite) {
+					return false
+				}
+			} else {
+				if reaminingNoOfSuiteCardsIsLessThanNoOfPlayers(roundSuite, noOfPlayers) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func checkIfPlayerCanHaveTrumps(playerID int, trumpSuite string) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var playerHaveSuite int
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM PLAYERS WHERE PLAYERID="+intToString(playerID)+" AND "+trumpSuite+"PROB=1", "SQL-f4csuFq64KTKHWuBkCzM32zhNNRi0aq0", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&playerHaveSuite)
+	}
+	if playerHaveSuite == 0 {
+		return false
+	} else {
+		return true
+	}
+}
+
+func checkIfFoesDoNotHaveHigerSuiteConfidence(playedInRound [8]int, currentCard CardValue, roundPoints int, cardSuite string, noOfPlayers int) bool {
+	for foeID := 0; foeID < len(playedInRound); foeID++ {
+		if foeID == 1 || foeID == 3 || foeID == 5 || foeID == 7 {
+			if playedInRound[foeID] == 0 {
+				if checkIfFoeHasMoreConfidenceOnHigherSuite(foeID, currentCard, roundPoints, cardSuite, noOfPlayers) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func checkIfFoesDoNotHaveHigerTrumpConfidence(playedInRound [8]int, currentCard CardValue, roundPoints int, trumpSuite string, noOfPlayers int) bool {
+	for foeID := 0; foeID < len(playedInRound); foeID++ {
+		if foeID == 1 || foeID == 3 || foeID == 5 || foeID == 7 {
+			if playedInRound[foeID] == 0 {
+				if checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID, currentCard, roundPoints, trumpSuite, noOfPlayers) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite string, playedInRound [8]int, noOfPlayers int, currentRoundWinnerPoints int) CardValue {
+	var currentCard, returnCard, nulCard CardValue
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var roundPoints int = 0
+	nulCard.Suite = "nul"
+	returnCard.Suite = "nul"
+	var returnNextTrump bool = false
+	if countSuiteCardsInMyHand(trumpSuite) == 0 {
+		return nulCard
+	}
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,ROUNDPOINTS FROM CARDS WHERE INMYHAND=true AND INPLAY=true AND CARDSUITE='"+trumpSuite+"' AND ROUNDPOINTS>"+intToString(currentRoundWinnerPoints)+" ORDER BY ROUNDPOINTS ASC", "SQL0040-SELECT CARDSUITE,CARDNAME ", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return nulCard
+	}
+	for rows.Next() {
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &roundPoints)
+		if checkIfFoesDoNotHaveHigerTrumpConfidence(playedInRound, currentCard, roundPoints, trumpSuite, noOfPlayers) {
+			returnCard.Suite = currentCard.Suite /// if a card is found where foes don't have more conf on higer trump card return the trump above it (if availbale) or that card
+			returnCard.Name = currentCard.Name
+			if returnNextTrump {
+				break
+			}
+			returnNextTrump = true
+		} else {
+			continue
+		}
+	}
+	if returnCard.Suite != "nul" {
+		return returnCard
+	} else {
+		return nulCard
+	}
+}
+
+func getIfATrumpCardCanBeUsedMidRound(trumpSuite string, roundSuite string, cardSuites [4]string, currentRoundWinnerID int, noOfPlayers int, cardsPerPlayer int,
+	roundNo int, playedInRound [8]int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int) (int, CardValue) {
+	var midRoundTrumpPlayCondition, myMaxTrumpPoints int = -1, 0
+	var returnCard, nulCard CardValue
+	nulCard.Suite = "nul"
+	returnCard.Suite = "nul"
+	myMaxTrumpPoints, _ = getMaxTrumpCardInMyHand(trumpSuite)
+	if currentRoundWinnerPoints > myMaxTrumpPoints {
+		// play condition 1001 - I don't have a trump to challenge the winner
+		return 1001, nulCard
+	}
+	if currentRoundWinnerID%2 == 0 { //our win so far
+		if allReaminingFoesMightHaveRoundSuiteCardsAndWillNotCut(roundSuite, trumpSuite, noOfPlayers, playedInRound) {
+			if checkIfFoesDoNotHaveHigerSuiteConfidence(playedInRound, currentRoundWinnerCard, currentRoundWinnerPoints, currentRoundWinnerCard.Suite, noOfPlayers) {
+				return 1002, nulCard
+			} else {
+				returnCard = getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite, playedInRound, noOfPlayers, currentRoundWinnerPoints)
+				midRoundTrumpPlayCondition = 1011
+			}
+		} else {
+			if countSuiteCardsInMyHand(trumpSuite) > countSuiteCardsNotInMyHand(trumpSuite) {
+				returnCard = getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite, playedInRound, noOfPlayers, currentRoundWinnerPoints)
+				midRoundTrumpPlayCondition = 1003
+			} else {
+				return 1004, nulCard
+			}
+		}
+	} else { // opposing win so far
+		returnCard = getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite, playedInRound, noOfPlayers, currentRoundWinnerPoints)
+		midRoundTrumpPlayCondition = 1004
+	}
+	if returnCard.Suite == "nul" {
+		return midRoundTrumpPlayCondition, nulCard
+	} else {
+		return midRoundTrumpPlayCondition, returnCard
+	}
+}
+
 func getMaxFromANonTrumpSuiteIfIHaveMaxOfThatSuiteAndFoesHaveNoTrumps(trumpSuite string, noOfPlayers int, cardSuites [4]string) CardValue {
 	var currentCard, nulCard CardValue
 	var dbResponse = false
@@ -1470,13 +1701,13 @@ func getMaxFromANonTrumpSuiteIfIHaveMaxOfThatSuiteAndFoesHaveNoTrumps(trumpSuite
 }
 
 func getMinCardIfIHaveOneMinCardFromANonTrumpSuite(trumpSuite string, cardSuites [4]string, cardPoints [13]int, cardsPerSuite int) CardValue {
-	var maxCutOffCardPointsForLeastValueCards int = cardPoints[cardsPerSuite/2] - 1
+	var maxCutOffCardPointsForLeastValueCards int = cardPoints[cardsPerSuite/2]
 	var currentCard, nulCard, tempCard CardValue
 	var dbResponse = false
 	var rows *sql.Rows
-	var suiteCount, minSuitePoints int = 0, cardPoints[0] // minSuitePoints = ace points
+	var suiteCount int = 0
 	nulCard.Suite = "nul"
-	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,COUNT(DISTINCT CARDNAME),MIN(POINTS) FROM CARDS WHERE INPLAY=TRUE AND INMYHAND=TRUE GROUP BY CARDSUITE;", "SQL00490-SELECT INMYHAND,MAX(POINTS)", true)
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE, CARDNAME, COUNT(DISTINCT CARDNAME), MIN(POINTS) FROM CARDS WHERE INPLAY=TRUE AND INMYHAND=TRUE GROUP BY CARDSUITE HAVING COUNT(DISTINCT CARDNAME)=1 ORDER BY MIN(POINTS) ASC LIMIT 1", "SQL00490-SELECT INMYHAND,MAX(POINTS)", true)
 	if !dbResponse {
 		os.Exit(1)
 	}
@@ -1489,10 +1720,10 @@ func getMinCardIfIHaveOneMinCardFromANonTrumpSuite(trumpSuite string, cardSuites
 		for rows.Next() {
 			var minPointForThisSuite int
 			rows.Scan(&tempCard.Suite, &tempCard.Name, &suiteCount, &minPointForThisSuite)
-			if tempCard.Suite != trumpSuite && suiteCount == 1 && minPointForThisSuite < minSuitePoints && minPointForThisSuite < maxCutOffCardPointsForLeastValueCards {
+			if tempCard.Suite != trumpSuite && minPointForThisSuite <= maxCutOffCardPointsForLeastValueCards {
+
 				currentCard.Suite = tempCard.Suite
 				currentCard.Name = tempCard.Name
-				minSuitePoints = minPointForThisSuite
 				minCardFound = true
 			}
 		}
@@ -1562,7 +1793,21 @@ func countSuiteCardsInMyHand(cardCuite string) int {
 	var suiteCount int = 0
 	var dbResponse bool = false
 	var rows *sql.Rows
-	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardCuite+"' AND INPLAY=TRUE AND INMYHAND=TRUE", "SQL00510-SELECT COUNT(CARDNAMES)", true)
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardCuite+"' AND INPLAY=TRUE AND INMYHAND=TRUE", "SQL-DS9sQrdBs5Nytauo8A8GcdYaP7164rhx", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&suiteCount)
+	}
+	return suiteCount
+}
+
+func countSuiteCardsNotInMyHand(cardCuite string) int {
+	var suiteCount int = 0
+	var dbResponse bool = false
+	var rows *sql.Rows
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE CARDSUITE='"+cardCuite+"' AND INPLAY=TRUE AND INMYHAND=false", "SQL-3evuBTbQXdVLwsfbdWWKbP6NQVbEiaIy", true)
 	if !dbResponse || rows == nil {
 		os.Exit(1)
 	}
@@ -1588,6 +1833,44 @@ func getARoundCardInMyHandToCloseRound(roundSuite string, currentRoundWinnerPoin
 	} else { // no suite cards
 		return nulCard
 	}
+}
+
+func getMaxCardInPlayForSuite(cardSuite string) (int, CardValue) {
+	var currentCard CardValue
+	var cardPoints int = 0
+	var dbResponse bool = false
+	var rows *sql.Rows
+	currentCard.Suite = "nul"
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MAX(POINTS) FROM CARDS WHERE INPLAY=true AND CARDSUITE='"+cardSuite+"'", "SQL-iNNWre84D2ilFem4vh06LPKtyCiMxdJS", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return cardPoints, currentCard
+	}
+	for rows.Next() {
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &cardPoints)
+	}
+	return cardPoints, currentCard
+}
+
+func getMaxCardInMyHandForSuite(cardSuite string) (int, CardValue) {
+	var currentCard CardValue
+	var cardPoints int = 0
+	var dbResponse bool = false
+	var rows *sql.Rows
+	currentCard.Suite = "nul"
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MAX(POINTS) FROM CARDS WHERE INPLAY=true and INMYHAND=true AND CARDSUITE='"+cardSuite+"'", "SQL-iNNWre84D2ilFem4vh06LPKtyCiMxdJS", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return cardPoints, currentCard
+	}
+	for rows.Next() {
+		rows.Scan(&currentCard.Suite, &currentCard.Name, &cardPoints)
+	}
+	return cardPoints, currentCard
 }
 
 func getMaxSuiteCardInMyHand(cardSuite string) int {
@@ -1691,13 +1974,21 @@ func getNonTrumpCardIfIHaveSecondMaxTrumpAndCanConvinceFoesWhoHaveThatMaxTrumpOn
 	var cardsInEachSuiteThatFoesDontHaveAtHand, cardsInEachSuiteThatFoeshaveLessProbToHaveAtHand [4]int
 	cardsInEachSuiteThatFoesDontHaveAtHand, cardsInEachSuiteThatFoeshaveLessProbToHaveAtHand = checkFoesForSuitesThatTheyDontHaveAtHand(cardSuites, noOfPlayers)
 	for s := 0; s < len(cardSuites); s++ {
-		if cardsInEachSuiteThatFoesDontHaveAtHand[s] == 0 {
+		if cardSuites[s] == trumpSuite {
+			continue
+		}
+		if cardsInEachSuiteThatFoesDontHaveAtHand[s] == 0 && cardSuites[s] != trumpSuite {
 			currentCard = getMinCardInMyHandFromSuite(cardSuites[s])
 			if currentCard.Suite != "nul" {
 				return currentCard
 			}
 		}
-		if cardsInEachSuiteThatFoeshaveLessProbToHaveAtHand[s] == 0 {
+	}
+	for s := 0; s < len(cardSuites); s++ {
+		if cardSuites[s] == trumpSuite {
+			continue
+		}
+		if cardsInEachSuiteThatFoeshaveLessProbToHaveAtHand[s] == 0 && cardSuites[s] != trumpSuite {
 			currentCard = getMaxCardInMyHandFromSuite(cardSuites[s])
 			if currentCard.Suite != "nul" {
 				return currentCard
@@ -2211,6 +2502,140 @@ func printGameRounds() {
 	}
 }
 
+func getMostConfSuiteForRoundWinner_PLCONF_BY_POINTS(currentRoundWinnerID int) string {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var garbageInt int
+	var mostConfSuite string = "nul"
+	rows, dbResponse = queryFromDB("SELECT MAX(total_points), CARDSUITE FROM (SELECT SUM(POINTS*PLCONF"+intToString(currentRoundWinnerID)+") AS total_points, CARDSUITE FROM CARDS WHERE INPLAY=true AND INMYHAND=false GROUP BY CARDSUITE) AS subquery GROUP BY CARDSUITE ORDER BY MAX(total_points) DESC LIMIT 1", "SQL-Z7efpoOhbVD6lR9FcMxDR1GviCJYSO40", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return mostConfSuite
+	}
+	for rows.Next() {
+		rows.Scan(&garbageInt, &mostConfSuite)
+	}
+	return mostConfSuite
+}
+
+func checkIfPlayerCanHaveLargerSuiteCards(playerID int, roundSuite string, currentRoundWinnerPoints int) bool {
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var noOfHigerSuiteCards int
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE ROUNDPOINTS>"+intToString(currentRoundWinnerPoints)+" AND PLCONF"+intToString(playerID)+">0 AND INPLAY=true AND INMYHAND=false", "SQL-Z7efpoOhbVD6lR9FcMxDR1GviCJYSO40", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&noOfHigerSuiteCards)
+	}
+	if noOfHigerSuiteCards == 0 {
+		return false
+	}
+	return true
+}
+
+func canRemaningPlayersHaveHigerSuiteCard(playedInRound [8]int, roundSuite string, currentRoundWinnerPoints int) bool {
+	for p := 0; p < len(playedInRound); p++ {
+		if playedInRound[p] == 0 {
+			if checkIfPlayerCanHaveLargerSuiteCards(playedInRound[p], roundSuite, currentRoundWinnerPoints) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func canCurrentRoundWinnerBeChallenged(currentRoundWinnerID int, currentRoundWinnerCard CardValue, trumpSuite string, roundSuite string, playedInRound [8]int,
+	currentRoundWinnerPoints int) bool {
+	var inPlayMaxPoints int = 0
+	inPlayMaxPoints, _ = getMaxCardInPlayForSuite(roundSuite)
+	if inPlayMaxPoints == currentRoundWinnerPoints {
+		return false
+	}
+	if !canRemaningPlayersHaveHigerSuiteCard(playedInRound, roundSuite, currentRoundWinnerPoints) {
+		return false
+	}
+	return true
+}
+
+func getLeastValueCardExceptFromSuiteAndTrump(cardSuite string, trumpSuite string) CardValue {
+	var currentCard, nulCard CardValue
+	var dbResponse bool = false
+	var rows *sql.Rows
+	currentCard.Suite = "nul"
+	nulCard.Suite = "nul"
+	rows, dbResponse = queryFromDB("SELECT CARDSUITE,CARDNAME,MIN(POINTS) FROM CARDS WHERE INMYHAND=true AND INPLAY=true AND CARDSUITE NOT IN ('"+trumpSuite+"','"+cardSuite+"')", "SQL-E6Ja1z8o7f90GynxsOAPeJbXGkTNub5V", true)
+	if !dbResponse {
+		os.Exit(1)
+	}
+	if rows == nil {
+		return nulCard
+	}
+	for rows.Next() {
+		rows.Scan(&currentCard.Suite, &currentCard.Name)
+	}
+	return currentCard
+}
+
+func getANonTrumpCardByCheckingTheRoundWinnerHand(trumpSuite string, roundSuite string, cardSuites [4]string, currentRoundWinnerID int, noOfPlayer int, cardsPerPlayer int,
+	roundNo int, playedInRound [8]int, currentRoundWinnerCard CardValue, currentRoundWinnerPoints int, roundEnder bool) CardValue {
+	var currentCard, nulCard CardValue
+	var dbResponse bool = false
+	var rows *sql.Rows
+	var foesWithTrump int = 0
+	currentCard.Suite = "nul"
+	nulCard.Suite = "nul"
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM PLAYERS WHERE PLAYERID IN (1,3,5,7) AND "+trumpSuite+"PROB=1", "SQL-d0dr88TUqnqUnukQ9cSQFcUCkZrcDGiQ", true)
+	if !dbResponse || rows == nil {
+		os.Exit(1)
+	}
+	for rows.Next() {
+		rows.Scan(&foesWithTrump)
+	}
+	if foesWithTrump != 0 {
+		return nulCard
+	}
+	if roundEnder { // if roundEnder
+		var possibleNextRoundSuite string = getMostConfSuiteForRoundWinner_PLCONF_BY_POINTS(currentRoundWinnerID) // find the most conf cards for round winner - get # of cards from reamining rounds (PLCONFX*Points)
+		if possibleNextRoundSuite == "nul" {
+			return nulCard
+		}
+		var handMaxCard, inPlayMaxCard CardValue
+		handMaxCard.Suite = "nul"
+		inPlayMaxCard.Suite = "nul"
+		var handmaxPoints, inPlayMaxPoints int = 0, 0
+		handmaxPoints, handMaxCard = getMaxCardInMyHandForSuite(possibleNextRoundSuite)
+		inPlayMaxPoints, inPlayMaxCard = getMaxCardInPlayForSuite(possibleNextRoundSuite)
+		if handmaxPoints == inPlayMaxPoints && inPlayMaxPoints != 0 && handMaxCard.Suite == inPlayMaxCard.Suite && inPlayMaxCard.Suite != "nul" {
+			currentCard = getLeastValueCardExceptFromSuiteAndTrump(possibleNextRoundSuite, trumpSuite)
+		}
+	} else { // if not round ender
+		if !canCurrentRoundWinnerBeChallenged(currentRoundWinnerID, currentRoundWinnerCard, trumpSuite, roundSuite, playedInRound, currentRoundWinnerPoints) { // if there are no card that can challenge roundwinner?
+			var possibleNextRoundSuite string = getMostConfSuiteForRoundWinner_PLCONF_BY_POINTS(currentRoundWinnerID) // find the most conf cards for round winner - get # of cards from reamining rounds (PLCONFX*Points)
+			if possibleNextRoundSuite == "nul" {
+				return nulCard
+			}
+			var handMaxCard, inPlayMaxCard CardValue
+			handMaxCard.Suite = "nul"
+			inPlayMaxCard.Suite = "nul"
+			var handmaxPoints, inPlayMaxPoints int = 0, 0
+			handmaxPoints, handMaxCard = getMaxCardInMyHandForSuite(possibleNextRoundSuite)
+			inPlayMaxPoints, inPlayMaxCard = getMaxCardInPlayForSuite(possibleNextRoundSuite)
+			if handmaxPoints == inPlayMaxPoints && inPlayMaxPoints != 0 && handMaxCard.Suite == inPlayMaxCard.Suite && inPlayMaxCard.Suite != "nul" {
+				currentCard = getLeastValueCardExceptFromSuiteAndTrump(possibleNextRoundSuite, trumpSuite)
+			}
+		}
+	}
+	if currentCard.Suite != "nul" {
+		return currentCard
+	} else {
+		return nulCard // return null if I don't have any max suite cards
+	}
+}
+
 func nulPrint1(playedRoundSuite bool, playedNonRoundTrump bool, currentCardIsRoundWinner bool) {
 	if playedRoundSuite && playedNonRoundTrump && currentCardIsRoundWinner {
 
@@ -2445,6 +2870,7 @@ func main() {
 				var currentCardIsRoundWinner bool = false
 				if playerInRound == 0 { // round starter
 					roundSuite = currentCard.Suite
+					resetCardsTabRoundPoints(trumpSuite)
 					if roundSuite != trumpSuite {
 						updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite, roundSuite)
 					}
@@ -2563,6 +2989,7 @@ func main() {
 						break
 					}
 					roundSuite = currentCard.Suite
+					resetCardsTabRoundPoints(trumpSuite)
 					if roundSuite != trumpSuite {
 						updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite, roundSuite)
 					}
@@ -2574,19 +3001,21 @@ func main() {
 				} else if playerInRound == (noOfPlayers - 1) { // i'm the last player in round
 					currentCard.Suite = "nul"
 					for currentCard.Suite == "nul" {
-						//currentCard = getMaxRoundCardInMyHand(roundSuite) ///////////////////////// get my Max RoundCard /////////////////////////
 						currentCard = getARoundCardInMyHandToCloseRound(roundSuite, currentRoundWinnerPoints, currentRoundWinnerID)
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 70
 							break
 						}
-						//currentCard = getMaxTrumpCardInMyHand(trumpSuite) //////////////////////////////get my Max trump Card ////////////////////
 						currentCard = getATrumpCardInMyHandToCloseRound(trumpSuite, currentRoundWinnerPoints, currentRoundWinnerID)
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 80
 							break
 						}
-						//currentCard = getARandomCardInMyHand() ////////////////////////getMaxNonRoundNonTrumpCardInMyHand //////////////////
+						currentCard = getANonTrumpCardByCheckingTheRoundWinnerHand(trumpSuite, roundSuite, cardSuites, currentRoundWinnerID, noOfPlayers, cardsPerPlayer, roundNo, playedInRound, currentRoundWinnerCard, currentRoundWinnerPoints, true)
+						if currentCard.Suite != "nul" {
+							myCardPlayCondition = 85
+							break
+						}
 						currentCard = getMinCardIfIHaveOneMinCardFromANonTrumpSuite(trumpSuite, cardSuites, cardPoints, cardsPerSuite)
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 90
@@ -2603,31 +3032,26 @@ func main() {
 					/////////// NOT OBVIOUS CHOICES //////////////////////
 					currentCard.Suite = "nul"
 					for currentCard.Suite == "nul" {
-						currentCard = getMaxRoundCardIfIHaveItInMyHandIfItsAboveCurrentWinner(roundSuite, currentRoundWinnerPoints) ///////////////////////// get my Max RoundCard /////////////////////////
+						currentCard = getMaxRoundCardIfIHaveItInMyHandIfItsAboveCurrentWinner(roundSuite, currentRoundWinnerPoints, currentRoundWinnerID, playedInRound, noOfPlayers) ///////////////////////// get my Max RoundCard /////////////////////////
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 110
 							break
 						}
-						/*currentCard = getMaxRoundCardInMyHand(roundSuite) ///////////////////////// get my Max RoundCard /////////////////////////
-						if currentCard.Suite != "nul" {
-							break
-						}*/
 						currentCard = getMinRoundCardInMyHand(roundSuite) ///////////////////////// get my Max RoundCard /////////////////////////
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 130
 							break
 						}
-						currentCard = getMidTrumpCardInMyHandWhereFoesHaveLessPosibilityForAHigherTrumpCard(trumpSuite, playedInRound) //////////////////////////////get my Max trump Card ////////////////////
+						myCardPlayCondition, currentCard = getIfATrumpCardCanBeUsedMidRound(trumpSuite, roundSuite, cardSuites, currentRoundWinnerID, noOfPlayers, cardsPerPlayer, roundNo, playedInRound, currentRoundWinnerCard, currentRoundWinnerPoints)
 						if currentCard.Suite != "nul" {
-							myCardPlayCondition = 140
+							// myCardPlayCondition = 1000-2000
 							break
 						}
-						currentCard = getMaxTrumpCardInMyHand(trumpSuite) ///////BEBUG CONDITION//////////
+						currentCard = getANonTrumpCardByCheckingTheRoundWinnerHand(trumpSuite, roundSuite, cardSuites, currentRoundWinnerID, noOfPlayers, cardsPerPlayer, roundNo, playedInRound, currentRoundWinnerCard, currentRoundWinnerPoints, false)
 						if currentCard.Suite != "nul" {
-							myCardPlayCondition = 170
+							myCardPlayCondition = 180
 							break
 						}
-						//currentCard = getARandomCardInMyHand()
 						currentCard = getMinCardIfIHaveOneMinCardFromANonTrumpSuite(trumpSuite, cardSuites, cardPoints, cardsPerSuite)
 						if currentCard.Suite != "nul" {
 							myCardPlayCondition = 190
