@@ -1050,7 +1050,7 @@ func playedRoundCardIsTheMaxCardInGamExceptMyHand(roundSuite string, currentRoun
 func allRemaningFoesDontHaveRoundSuite(roundSuite string, noOfPlayers int, playedInRound [8]int) bool {
 	var dbResponse bool = false
 	var rows *sql.Rows
-	for p := 0; p < len(playedInRound); p++ {
+	for p := 1; p < len(playedInRound); p++ {
 		if playedInRound[p] == 0 && p%2 == 1 {
 			var playerHaveSuite int
 			rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM PLAYERS WHERE PLAYERID="+intToString(p)+" AND "+roundSuite+"PROB=1", "SQL-5uMxWibYSoKQfJkAcNvN39STq717QFqx", true)
@@ -1522,7 +1522,7 @@ func reaminingNoOfSuiteCardsIsLessThanNoOfPlayers(roundSuite string, noOfPlayers
 func allReaminingFoesMightHaveRoundSuiteCardsAndWillNotCut(roundSuite string, trumpSuite string, noOfPlayers int, playedInRound [8]int) bool {
 	var dbResponse bool = false
 	var rows *sql.Rows
-	for p := 0; p < len(playedInRound); p++ {
+	for p := 1; p < len(playedInRound); p++ {
 		if playedInRound[p] == 0 && p%2 == 1 {
 			var playerHaveSuite int
 			rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM PLAYERS WHERE PLAYERID="+intToString(p)+" AND "+roundSuite+"PROB=1", "SQL-5uMxWibYSoKQfJkAcNvN39STq717QFqx", true)
@@ -1565,7 +1565,7 @@ func checkIfPlayerCanHaveTrumps(playerID int, trumpSuite string) bool {
 }
 
 func checkIfFoesDoNotHaveHigerSuiteConfidence(playedInRound [8]int, currentCard CardValue, roundPoints int, cardSuite string, noOfPlayers int) bool {
-	for foeID := 0; foeID < len(playedInRound); foeID++ {
+	for foeID := 1; foeID < len(playedInRound); foeID++ {
 		if foeID == 1 || foeID == 3 || foeID == 5 || foeID == 7 {
 			if playedInRound[foeID] == 0 {
 				if checkIfFoeHasMoreConfidenceOnHigherSuite(foeID, currentCard, roundPoints, cardSuite, noOfPlayers) {
@@ -1578,7 +1578,7 @@ func checkIfFoesDoNotHaveHigerSuiteConfidence(playedInRound [8]int, currentCard 
 }
 
 func checkIfFoesDoNotHaveHigerTrumpConfidence(playedInRound [8]int, currentCard CardValue, roundPoints int, trumpSuite string, noOfPlayers int) bool {
-	for foeID := 0; foeID < len(playedInRound); foeID++ {
+	for foeID := 1; foeID < len(playedInRound); foeID++ {
 		if foeID == 1 || foeID == 3 || foeID == 5 || foeID == 7 {
 			if playedInRound[foeID] == 0 {
 				if checkIfFoeHasMoreConfidenceOnHigherTrumps(foeID, currentCard, roundPoints, trumpSuite, noOfPlayers) {
@@ -2524,7 +2524,7 @@ func checkIfPlayerCanHaveLargerSuiteCards(playerID int, roundSuite string, curre
 	var dbResponse bool = false
 	var rows *sql.Rows
 	var noOfHigerSuiteCards int
-	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE ROUNDPOINTS>"+intToString(currentRoundWinnerPoints)+" AND PLCONF"+intToString(playerID)+">0 AND INPLAY=true AND INMYHAND=false", "SQL-Z7efpoOhbVD6lR9FcMxDR1GviCJYSO40", true)
+	rows, dbResponse = queryFromDB("SELECT COUNT(*) FROM CARDS WHERE ROUNDPOINTS>"+intToString(currentRoundWinnerPoints)+" AND PLCONF"+intToString(playerID)+">0 AND INPLAY=true AND INMYHAND=false", "SQL-p3IYH5OfhCV9q20xE0FV3PFn9Tia9nzJ", true)
 	if !dbResponse || rows == nil {
 		os.Exit(1)
 	}
@@ -2538,7 +2538,7 @@ func checkIfPlayerCanHaveLargerSuiteCards(playerID int, roundSuite string, curre
 }
 
 func canRemaningPlayersHaveHigerSuiteCard(playedInRound [8]int, roundSuite string, currentRoundWinnerPoints int) bool {
-	for p := 0; p < len(playedInRound); p++ {
+	for p := 1; p < len(playedInRound); p++ {
 		if playedInRound[p] == 0 {
 			if checkIfPlayerCanHaveLargerSuiteCards(playedInRound[p], roundSuite, currentRoundWinnerPoints) {
 				return true
@@ -2819,6 +2819,7 @@ func main() {
 	var gameResult int = 0
 	var previousRoundWinner int = trumpsCaller
 	for roundNo := 0; roundNo < cardsPerPlayer; roundNo++ { // for every round
+		resetCardsTabRoundPoints(trumpSuite)
 		var roundSuite string = "notknown"
 		var currentRoundWinnerID int = -1
 		var currentRoundWinnerName string = "nul-player"
@@ -2870,7 +2871,6 @@ func main() {
 				var currentCardIsRoundWinner bool = false
 				if playerInRound == 0 { // round starter
 					roundSuite = currentCard.Suite
-					resetCardsTabRoundPoints(trumpSuite)
 					if roundSuite != trumpSuite {
 						updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite, roundSuite)
 					}
@@ -2989,7 +2989,6 @@ func main() {
 						break
 					}
 					roundSuite = currentCard.Suite
-					resetCardsTabRoundPoints(trumpSuite)
 					if roundSuite != trumpSuite {
 						updateCardsTabRoundPointsForRounduite(pointsAddForRoundSuite, roundSuite)
 					}
